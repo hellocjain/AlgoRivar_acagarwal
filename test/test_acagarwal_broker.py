@@ -127,3 +127,136 @@ def test_acagarwal_master_contract_import():
     from broker.acagarwal.database.master_contract_db import download_master_contract, master_contract_download
     assert callable(download_master_contract)
     assert callable(master_contract_download)
+
+def test_acagarwal_history_chunking_and_parsing(monkeypatch):
+    import pandas as pd
+    from broker.acagarwal.api.data import BrokerData
+    import httpx
+
+    calls = []
+    def mock_get(url, params=None, headers=None, timeout=None):
+        calls.append({"url": url, "params": params, "headers": headers})
+        # Simulate 2 chunks of XTS response
+        fake_data = "1724056200|1313.3|1320.0|1310.0|1315.0|50000|0,1724056500|1315.0|1322.0|1314.0|1318.0|60000|0"
+        return httpx.Response(200, json={
+            "type": "success",
+            "code": "s-session-0001",
+            "result": {"dataReponse": fake_data}
+        })
+
+    # Monkeypatch httpx client get
+    from utils import httpx_client
+    monkeypatch.setattr(httpx_client.get_httpx_client(), "get", mock_get)
+
+    # Mock token lookup
+    from database import token_db
+    monkeypatch.setattr(token_db, "get_token", lambda s, e: "2885")
+
+    bd = BrokerData(auth_token="test_auth_token", feed_token="test_feed_token")
+    df = bd.get_history("RELIANCE", "NSE", "5m", "2026-08-01", "2026-08-15")
+
+    assert not df.empty
+    assert list(df.columns) == ["timestamp", "open", "high", "low", "close", "volume", "oi"]
+    assert len(df) == 2
+    assert df.iloc[0]["open"] == 1313.3
+    assert df.iloc[0]["high"] == 1320.0
+    assert df.iloc[0]["close"] == 1315.0
+    # Verified chunking was triggered across the 15-day span (max 6 days per request)
+    assert len(calls) >= 3
+
+def test_acagarwal_quotes_parsing(monkeypatch):
+    from broker.acagarwal.api.data import BrokerData
+    import httpx
+
+    sample_xts_quotes = {
+        "type": "success",
+        "code": "s-session-0001",
+        "result": {
+            "mdp": 1502,
+            "quotesList": [{"exchangeSegment": 1, "exchangeInstrumentID": "2885"}],
+            "listQuotes": [
+                json.dumps({
+                    "MessageCode": 1502,
+                    "ExchangeSegment": 1,
+                    "ExchangeInstrumentID": 2885,
+                    "Touchline": {
+                        "BidInfo": {"Price": 1313.3, "Size": 58},
+                        "AskInfo": {"Price": 1313.5, "Size": 2},
+                        "LastTradedPrice": 1313.3,
+                        "Open": 1320.3,
+                        "High": 1321.6,
+                        "Low": 1310.5,
+                        "Close": 1322.0,
+                        "TotalTradedQuantity": 5384097,
+                    }
+                })
+            ]
+        }
+    }
+
+    def mock_post(url, json=None, headers=None, timeout=None):
+        return httpx.Response(200, json=sample_xts_quotes)
+
+    from utils import httpx_client
+    monkeypatch.setattr(httpx_client.get_httpx_client(), "post", mock_post)
+
+    from database import token_db
+    monkeypatch.setattr(token_db, "get_token", lambda s, e: "2885")
+
+    bd = BrokerData(auth_token="test_auth_token", feed_token="test_feed_token")
+    quote = bd.get_quotes("RELIANCE", "NSE")
+
+    assert quote["symbol"] == "RELIANCE"
+    assert quote["exchange"] == "NSE"
+    assert quote["ltp"] == 1313.3
+    assert quote["open"] == 1320.3
+    assert quote["high"] == 1321.6
+    assert quote["low"] == 1310.5
+    assert quote["close"] == 1322.0
+    assert quote["prev_close"] == 1322.0
+    assert quote["volume"] == 5384097
+    assert quote["bid"] == 1313.3
+    assert quote["ask"] == 1313.5
+
+def test_acagarwal_synthetic_limit_market_order(monkeypatch):
+    from broker.acagarwal.api.order_api import place_order_api
+    import httpx
+
+    placed_payloads = []
+    def mock_post(url, headers=None, json=None):
+        placed_payloads.append(json)
+        return httpx.Response(200, json={
+            "type": "success",
+            "result": {"AppOrderID": 987654321}
+        })
+
+    from utils import httpx_client
+    monkeypatch.setattr(httpx_client.get_httpx_client(), "post", mock_post)
+
+    from database import token_db
+    monkeypatch.setattr(token_db, "get_token", lambda s, e: "2885")
+
+    # Mock BrokerData.get_quotes to return 1313.30
+    from broker.acagarwal.api.data import BrokerData
+    monkeypatch.setattr(BrokerData, "get_quotes", lambda self, s, e: {
+        "symbol": s, "exchange": e, "ltp": 1313.3, "open": 1320.0, "high": 1325.0, "low": 1310.0, "close": 1315.0, "volume": 1000
+    })
+
+    # Test MARKET order conversion to Synthetic LIMIT
+    order_data = {
+        "symbol": "RELIANCE",
+        "exchange": "NSE",
+        "action": "BUY",
+        "pricetype": "MARKET",
+        "quantity": 10,
+        "product": "MIS",
+        "price": 0.0,
+    }
+
+    resp, resp_data, orderid = place_order_api(order_data, auth="test_auth")
+    assert orderid == 987654321
+    assert len(placed_payloads) == 1
+    # Check that it got converted to LIMIT with non-zero marketable price
+    assert placed_payloads[0]["orderType"] == "LIMIT"
+    assert float(placed_payloads[0]["limitPrice"]) > 1300.0
+

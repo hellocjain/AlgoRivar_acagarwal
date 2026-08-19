@@ -146,14 +146,18 @@ def place_order_api(data, auth):
             fake_resp.status = 400
             return fake_resp, {"error": error_msg}, None
 
-        # Quirk #3: Client-side Freeze Quantity validation
-        freeze_qty = get_freeze_qty_for_option(symbol, exchange) if symbol and exchange else 0
-        if freeze_qty > 0 and quantity > freeze_qty:
-            error_msg = f"[AC Agarwal Safeguard] Order quantity {quantity} exceeds client-side freeze quantity limit {freeze_qty} for {symbol}"
-            logger.error(error_msg)
-            fake_resp = httpx.Response(400, json={"type": "error", "description": error_msg})
-            fake_resp.status = 400
-            return fake_resp, {"error": error_msg}, None
+        # Quirk #3: Client-side Freeze Quantity validation (applies only to derivatives with freeze_qty > 1)
+        if exchange in ["NFO", "BFO", "CDS", "MCX"]:
+            try:
+                freeze_qty = get_freeze_qty_for_option(symbol, exchange) if symbol and exchange else 0
+                if freeze_qty > 1 and quantity > freeze_qty:
+                    error_msg = f"[AC Agarwal Safeguard] Order quantity {quantity} exceeds client-side freeze quantity limit {freeze_qty} for {symbol}"
+                    logger.error(error_msg)
+                    fake_resp = httpx.Response(400, json={"type": "error", "description": error_msg})
+                    fake_resp.status = 400
+                    return fake_resp, {"error": error_msg}, None
+            except Exception as fz_err:
+                logger.debug(f"[AC Agarwal] Freeze qty check skipped: {fz_err}")
 
         # Quirk #4: Synthetic Marketable Limit Order for MARKET orders
         # AC Agarwal requires LIMIT orders with a non-zero price for all Algo-tagged orders.
@@ -164,10 +168,11 @@ def place_order_api(data, auth):
                 try:
                     bd = BrokerData(auth_token=auth)
                     quote = bd.get_quotes(symbol, exchange)
-                    if isinstance(quote, dict) and "result" in quote:
-                        res_obj = quote["result"]
-                        if isinstance(res_obj, dict):
-                            ltp = float(res_obj.get("LastTradedPrice", 0.0))
+                    if isinstance(quote, dict):
+                        if "ltp" in quote and float(quote.get("ltp") or 0.0) > 0:
+                            ltp = float(quote["ltp"])
+                        elif "result" in quote and isinstance(quote["result"], dict):
+                            ltp = float(quote["result"].get("LastTradedPrice", 0.0) or 0.0)
                 except Exception as quote_err:
                     logger.warning(f"[AC Agarwal] Failed to compute synthetic limit price from quotes: {quote_err}")
 

@@ -82,6 +82,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             from database.token_db import get_token
             token = get_token(symbol, exchange)
             if not token:
+                self.logger.warning(f"[AC Agarwal WS] Token not found for {exchange}:{symbol}")
                 return {"status": "error", "message": f"Token not found for {exchange}:{symbol}"}
 
             exch_code = ACAgarwalExchangeMapper.get_exchange_type(exchange)
@@ -90,6 +91,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 "exchangeInstrumentID": int(token) if str(token).isdigit() else token,
             }]
 
+            self.logger.info(f"[AC Agarwal WS] Subscribing {exchange}:{symbol} (token={token}, seg={exch_code}) mode={mode}")
             if self.ws_client:
                 success = self.ws_client.subscribe(instruments, mode=mode)
                 return {"status": "success" if success else "error"}
@@ -117,6 +119,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
 
     def _handle_tick(self, raw_tick: dict):
         try:
+            self.logger.debug(f"[AC Agarwal WS] Received raw tick: {raw_tick}")
             parsed = self.transform_to_openalgo_format(raw_tick)
             if parsed and parsed.get("symbol"):
                 exchange = parsed.get("exchange", "NSE")
@@ -128,6 +131,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 topic_quote = f"{exchange}_{symbol}_QUOTE"
                 topic_depth = f"{exchange}_{symbol}_DEPTH"
 
+                self.logger.info(f"[AC Agarwal WS] Publishing tick for {exchange}:{symbol} -> LTP: {parsed.get('ltp')}")
                 self.publish_market_data(topic_ltp, parsed)
                 self.publish_market_data(topic_quote, parsed)
                 self.publish_market_data(topic_depth, parsed)

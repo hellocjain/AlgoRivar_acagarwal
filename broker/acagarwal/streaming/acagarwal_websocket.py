@@ -162,6 +162,7 @@ class ACAgarwalWebSocketClient:
         @self.sio.on("ltp")
         def on_market_data(data):
             try:
+                logger.debug(f"[AC Agarwal WS] Raw Socket.IO packet received: {data}")
                 if isinstance(data, str):
                     data = json.loads(data)
                 if self.on_tick_callback:

@@ -1739,23 +1739,18 @@ export class TradingTerminal {
       } catch {
         /* ignore quote lookup */
       }
-      if (quoteLtp > 0) {
-        const now = Math.floor(Date.now() / 1000)
-        this.rawBars = [
-          {
-            time: now - 300,
-            open: quoteLtp,
-            high: quoteLtp,
-            low: quoteLtp,
-            close: quoteLtp,
-            volume: 0,
-          },
-        ]
-      } else {
-        if (!opts.silent)
-          this.toast(`no history for ${this.sym.symbol} ${this.sym.exchange} ${this.interval}`, 'err')
-        return false
-      }
+      const refPrice = quoteLtp > 0 ? quoteLtp : (Number(info.strike) > 1 ? Number(info.strike) : 100)
+      const now = Math.floor(Date.now() / 1000)
+      this.rawBars = [
+        {
+          time: now - 300,
+          open: refPrice,
+          high: refPrice,
+          low: refPrice,
+          close: refPrice,
+          volume: 0,
+        },
+      ]
     }
     this.prevClose =
       this.rawBars.length > 1

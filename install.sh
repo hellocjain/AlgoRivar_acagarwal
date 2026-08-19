@@ -23,25 +23,57 @@ ACTUAL_USER="${SUDO_USER:-$(whoami)}"
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$INSTALL_DIR"
 
-echo -e "[1/5] Checking and installing minimal system libraries..."
+# Step 0: Ensure swap on low-memory (1GB) VPS to prevent OOM
+if [ "$(id -u)" -eq 0 ]; then
+  TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
+  TOTAL_SWAP=$(free -m | awk '/^Swap:/{print $2}')
+  if [ "$TOTAL_MEM" -lt 2000 ] && [ "$TOTAL_SWAP" -lt 500 ]; then
+    echo -e "[+] Low memory detected (${TOTAL_MEM}MB RAM). Creating 1GB swap file..."
+    fallocate -l 1G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null || true
+    if [ -f /swapfile ]; then
+      chmod 600 /swapfile
+      mkswap /swapfile >/dev/null 2>&1 || true
+      swapon /swapfile >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+
+echo -e "[1/5] Checking system prerequisites..."
 if [ "$(id -u)" -eq 0 ]; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq -y
+  # Wait if cloud-init / unattended-upgrades is holding apt lock
+  LOCK_WAIT=0
+  while fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+    if [ $LOCK_WAIT -eq 0 ]; then
+      echo -e "[!] Ubuntu background update in progress. Waiting for apt lock to release..."
+    fi
+    sleep 2
+    LOCK_WAIT=$((LOCK_WAIT + 1))
+    if [ $LOCK_WAIT -gt 15 ]; then
+      break
+    fi
+  done
+  apt-get update -qq -y > /dev/null 2>&1 || true
   apt-get install -qq -y curl git libevent-dev sqlite3 > /dev/null 2>&1 || true
-else
-  echo -e "[!] Running without root; assuming system libraries exist."
 fi
 
 echo -e "
-[2/5] Setting up ultra-fast uv environment..."
+[2/5] Setting up uv Python environment..."
+export PATH="$HOME/.local/bin:/root/.local/bin:$PATH"
 if ! command -v uv &> /dev/null; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+  curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1 || true
   export PATH="$HOME/.local/bin:/root/.local/bin:$PATH"
 fi
 
 UV_BIN="$(which uv || echo "$HOME/.local/bin/uv")"
 if [ ! -x "$UV_BIN" ] && [ -x "/root/.local/bin/uv" ]; then
   UV_BIN="/root/.local/bin/uv"
+fi
+
+if [ ! -x "$UV_BIN" ]; then
+  echo -e "[+] Fetching standalone uv binary..."
+  curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh > /dev/null 2>&1 || true
+  UV_BIN="$(which uv || echo "/usr/local/bin/uv")"
 fi
 
 # Ensure Python 3.12 standalone runtime is fetched by uv

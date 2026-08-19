@@ -78,7 +78,7 @@ class BrokerData:
                         data = response.json()
                         if data.get("type") == "success":
                             result = data.get("result", {})
-                            quotes_list = result.get("quotesList", [])
+                            quotes_list = result.get("quotesList", []) or result.get("quotes", [])
                             if quotes_list:
                                 item = quotes_list[0]
                                 if isinstance(item, str):
@@ -86,13 +86,45 @@ class BrokerData:
                                         item = json.loads(item)
                                     except Exception:
                                         item = {}
-                                touchline = item.get("Touchline", {})
-                                ltp = float(touchline.get("LastTradedPrice", 0.0))
-                                open_p = float(touchline.get("Open", 0.0))
-                                high_p = float(touchline.get("High", 0.0))
-                                low_p = float(touchline.get("Low", 0.0))
-                                close_p = float(touchline.get("Close", 0.0))
-                                vol = int(touchline.get("TotalQtyTraded", 0))
+                                touchline = item.get("Touchline") or item.get("touchline") or item
+                                if isinstance(touchline, str):
+                                    try:
+                                        touchline = json.loads(touchline)
+                                    except Exception:
+                                        touchline = {}
+
+                                def _qfloat(val, d=0.0):
+                                    try:
+                                        return float(val) if val is not None and val != "" else d
+                                    except (ValueError, TypeError):
+                                        return d
+
+                                def _qint(val, d=0):
+                                    try:
+                                        return int(float(val)) if val is not None and val != "" else d
+                                    except (ValueError, TypeError):
+                                        return d
+
+                                ltp = _qfloat(
+                                    touchline.get("LastTradedPrice")
+                                    or touchline.get("lastTradedPrice")
+                                    or touchline.get("LTP")
+                                    or touchline.get("ltp")
+                                    or item.get("LastTradedPrice")
+                                    or item.get("LTP")
+                                )
+                                open_p = _qfloat(touchline.get("Open") or touchline.get("open") or item.get("Open"))
+                                high_p = _qfloat(touchline.get("High") or touchline.get("high") or item.get("High"))
+                                low_p = _qfloat(touchline.get("Low") or touchline.get("low") or item.get("Low"))
+                                close_p = _qfloat(touchline.get("Close") or touchline.get("close") or item.get("Close"))
+                                vol = _qint(
+                                    touchline.get("TotalQtyTraded")
+                                    or touchline.get("totalQtyTraded")
+                                    or touchline.get("Volume")
+                                    or touchline.get("volume")
+                                    or item.get("TotalQtyTraded")
+                                )
+
                                 return {
                                     "symbol": symbol,
                                     "exchange": exchange,

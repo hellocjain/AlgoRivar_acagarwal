@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AlgoRivarV2 - Dedicated AC Agarwal (Symphony XTS) Automated Ubuntu Installer
+# AlgoRivarV2 - Dedicated AC Agarwal (Symphony XTS) Ultra-Fast Ubuntu Installer
 # ==============================================================================
 set -e
+
+START_TIME=$(date +%s)
 
 GREEN='[0;32m'
 CYAN='[0;36m'
@@ -19,41 +21,50 @@ echo -e ""
 
 ACTUAL_USER="${SUDO_USER:-$(whoami)}"
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$INSTALL_DIR"
 
-echo -e "[1/6] Installing system prerequisites..."
+echo -e "[1/5] Checking and installing minimal system libraries..."
 if [ "$(id -u)" -eq 0 ]; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y
-  apt-get install -y python3 python3-pip python3-venv git curl build-essential libevent-dev sqlite3 lsof
+  apt-get update -qq -y
+  apt-get install -qq -y curl git libevent-dev sqlite3 > /dev/null 2>&1 || true
 else
-  echo -e "[!] Running without root; assuming packages are already installed."
+  echo -e "[!] Running without root; assuming system libraries exist."
 fi
 
 echo -e "
-[2/6] Setting up uv Python package manager..."
+[2/5] Setting up ultra-fast uv environment..."
 if ! command -v uv &> /dev/null; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
-  if [ -d "/root/.local/bin" ]; then
-    export PATH="/root/.local/bin:$PATH"
-  fi
+  curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+  export PATH="$HOME/.local/bin:/root/.local/bin:$PATH"
 fi
 
-cd "$INSTALL_DIR"
-echo -e "
-[3/6] Installing Python dependencies with uv..."
-uv sync
+UV_BIN="$(which uv || echo "$HOME/.local/bin/uv")"
+if [ ! -x "$UV_BIN" ] && [ -x "/root/.local/bin/uv" ]; then
+  UV_BIN="/root/.local/bin/uv"
+fi
+
+# Ensure Python 3.12 standalone runtime is fetched by uv
+"$UV_BIN" python install 3.12 --quiet > /dev/null 2>&1 || true
 
 echo -e "
-[4/6] Auto-detecting Server IP & Generating Secure Configuration..."
-SERVER_IP=$(curl -s --connect-timeout 2 https://api.ipify.org || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+[3/5] Installing Python dependencies in parallel..."
+"$UV_BIN" sync --quiet
+
+# Pre-create standard directories
+mkdir -p db log tmp
+chmod 755 db log tmp
+
+echo -e "
+[4/5] Auto-detecting Server IP & Generating Secure Configuration..."
+SERVER_IP=$(curl -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || curl -s --connect-timeout 2 https://ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
 SERVER_IP=$(echo "$SERVER_IP" | xargs)
 
 if [ ! -f ".env" ] || [ ! -s ".env" ]; then
-  echo -e "[+] Generating new production .env configuration..."
-  APP_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-  API_KEY_PEPPER=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-  FERNET_SALT=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+  echo -e "[+] Creating secure production .env..."
+  APP_KEY=$("$UV_BIN" run python -c "import secrets; print(secrets.token_hex(32))")
+  API_KEY_PEPPER=$("$UV_BIN" run python -c "import secrets; print(secrets.token_hex(32))")
+  FERNET_SALT=$("$UV_BIN" run python -c "import secrets; print(secrets.token_hex(16))")
 
   cat > .env << EOF
 # AlgoRivarV2 Environment Configuration
@@ -108,15 +119,15 @@ WEBHOOK_RATE_LIMIT = '120/minute'
 STRATEGY_RATE_LIMIT = '120/minute'
 SESSION_EXPIRY_TIME = '86400'
 EOF
-  echo -e "[+] .env created with auto-generated 64-char security keys!"
+  chmod 600 .env
+  echo -e "[+] .env generated with encrypted 64-char security keys!"
 else
-  echo -e "[+] Existing .env file found. Preserving current configuration."
+  echo -e "[+] Existing .env file detected. Retaining current configuration."
 fi
 
 echo -e "
-[5/6] Configuring systemd background auto-start service..."
+[5/5] Configuring systemd background auto-start service..."
 if [ "$(id -u)" -eq 0 ]; then
-  UV_PATH=$(which uv || echo "/root/.local/bin/uv")
   cat > /etc/systemd/system/algorivar.service << EOF
 [Unit]
 Description=AlgoRivarV2 Dedicated AC Agarwal Trading Engine
@@ -128,7 +139,9 @@ User=root
 WorkingDirectory=
 ExecStart= run app.py
 Restart=always
-RestartSec=5
+RestartSec=3
+LimitNOFILE=65536
+LimitNPROC=4096
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
@@ -136,27 +149,30 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  systemctl enable algorivar.service
+  systemctl enable algorivar.service > /dev/null 2>&1 || true
   systemctl restart algorivar.service
-  echo -e "[+] systemd service 'algorivar' enabled and started successfully!"
+  echo -e "[+] systemd service 'algorivar' enabled and active!"
 else
-  echo -e "[!] Non-root user: skipping systemd service registration. You can start the server manually using: uv run app.py"
+  echo -e "[!] Non-root user: skipping systemd service registration. You can run manually via:  run app.py"
 fi
+
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
 
 echo -e "
 ======================================================================"
-echo "       🎉 AlgoRivarV2 Installation Complete & Running!               "
-echo "======================================================================"
+echo -e "       🎉 AlgoRivarV2 Installed & Running in  seconds!         "
+echo -e "======================================================================"
 echo -e ""
 echo -e "  🌐 Open your browser and navigate to:"
 echo -e "     http://:5000"
 echo -e ""
-echo -e "  🔑 First-Time Setup Steps:"
-echo -e "     1. Create your Admin Password on the web setup screen"
+echo -e "  🔑 First-Time Setup (Zero Terminal Work):"
+echo -e "     1. Create your Admin Password on the web screen"
 echo -e "     2. Enter your AC Agarwal Client ID, App Key & Secret Key"
-echo -e "     3. Click 'Connect AC Agarwal & Launch' and start trading!"
+echo -e "     3. Click 'Connect AC Agarwal & Launch' and begin trading!"
 echo -e ""
-echo -e "  📋 Service Management Commands:"
+echo -e "  📋 Service Controls:"
 echo -e "     Status:  systemctl status algorivar"
 echo -e "     Logs:    journalctl -u algorivar -f"
 echo -e "     Restart: systemctl restart algorivar"

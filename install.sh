@@ -40,7 +40,7 @@ if [ "$(id -u)" -eq 0 ]; then
   fi
 fi
 
-echo -e "${CYAN}[1/5] Checking system prerequisites...${NC}"
+echo -e "${CYAN}[1/5] Checking system prerequisites and firewall...${NC}"
 if [ "$(id -u)" -eq 0 ]; then
   export DEBIAN_FRONTEND=noninteractive
   # Wait if cloud-init / unattended-upgrades is holding apt lock
@@ -101,8 +101,9 @@ fi
 
 echo -e "${GREEN}[+] Detected Server IP: ${SERVER_IP}${NC}"
 
-if [ ! -f ".env" ] || [ ! -s ".env" ] || grep -q "http://:5000" ".env" 2>/dev/null; then
-  echo -e "${GREEN}[+] Generating production .env configuration...${NC}"
+# Auto-fix / create .env
+if [ ! -f ".env" ] || [ ! -s ".env" ] || grep -q "http://:5000" ".env" 2>/dev/null || grep -q "/minute" ".env" 2>/dev/null; then
+  echo -e "${GREEN}[+] Generating/Updating production .env configuration...${NC}"
   APP_KEY=$("$UV_BIN" run python -c "import secrets; print(secrets.token_hex(32))")
   API_KEY_PEPPER=$("$UV_BIN" run python -c "import secrets; print(secrets.token_hex(32))")
   FERNET_SALT=$("$UV_BIN" run python -c "import secrets; print(secrets.token_hex(16))")
@@ -151,17 +152,20 @@ LOG_LEVEL = 'INFO'
 LOG_DIR = 'log'
 LOG_FORMAT = '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
 LOG_RETENTION = '14'
-LOGIN_RATE_LIMIT_MIN = '100/minute'
-LOGIN_RATE_LIMIT_HOUR = '1000/hour'
-API_RATE_LIMIT = '120/minute'
-ORDER_RATE_LIMIT = '120/minute'
-SMART_ORDER_RATE_LIMIT = '120/minute'
-WEBHOOK_RATE_LIMIT = '120/minute'
-STRATEGY_RATE_LIMIT = '120/minute'
-SESSION_EXPIRY_TIME = '86400'
+LOGIN_RATE_LIMIT_MIN = "5 per minute"
+LOGIN_RATE_LIMIT_HOUR = "25 per hour"
+RESET_RATE_LIMIT = "15 per hour"
+API_RATE_LIMIT = "50 per second"
+ORDER_RATE_LIMIT = "10 per second"
+SMART_ORDER_RATE_LIMIT = "10 per second"
+WEBHOOK_RATE_LIMIT = "100 per minute"
+STRATEGY_RATE_LIMIT = "200 per minute"
+SESSION_EXPIRY_TIME = '03:00'
+DISABLE_SESSION_EXPIRY = 'false'
+MASTER_CONTRACT_CUTOFF_TIME = '08:00'
 ENVEOF
   chmod 600 .env
-  echo -e "${GREEN}[+] .env generated with encrypted 64-char security keys!${NC}"
+  echo -e "${GREEN}[+] .env generated with valid rate limits and security keys!${NC}"
 else
   echo -e "${GREEN}[+] Existing .env file detected. Retaining current configuration.${NC}"
 fi
@@ -201,9 +205,11 @@ END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
 echo -e "
-${GREEN}${BOLD}======================================================================"
+${GREEN}${BOLD}======================================================================
+"
 echo -e "       🎉 AlgoRivarV2 Installed & Running in ${ELAPSED} seconds!         "
-echo -e "======================================================================${NC}"
+echo -e "
+======================================================================${NC}"
 echo -e ""
 echo -e "  🌐 ${BOLD}Open your browser and navigate to:${NC}"
 echo -e "     ${CYAN}${BOLD}http://${SERVER_IP}:5000${NC}"

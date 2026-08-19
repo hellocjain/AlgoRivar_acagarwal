@@ -3,7 +3,7 @@
 import json
 import os
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 from broker.acagarwal.baseurl import BASE_URL, MARKET_DATA_URL
@@ -53,16 +53,31 @@ class BrokerData:
             if not token:
                 return {"status": "error", "message": f"Token not found for {symbol}:{exchange}"}
 
-            payload = {
-                "instruments": [
-                    {
-                        "exchangeSegment": map_exchange_code(exchange),
-                        "exchangeInstrumentID": int(token) if str(token).isdigit() else token,
-                    }
-                ],
-                "xtsMessageCode": 1502,
-                "publishFormat": "JSON",
-            }
+            seg_code = map_exchange_code(exchange)
+            token_int = int(token) if str(token).isdigit() else token
+
+            candidate_payloads = [
+                {
+                    "instruments": [
+                        {
+                            "exchangeSegment": seg_code,
+                            "exchangeInstrumentID": token_int,
+                        }
+                    ],
+                    "xtsMessageCode": 1502,
+                    "publishFormat": "JSON",
+                },
+                {
+                    "instruments": [
+                        {
+                            "exchangeSegment": seg_code,
+                            "exchangeInstrumentID": str(token),
+                        }
+                    ],
+                    "xtsMessageCode": 1502,
+                    "publishFormat": "JSON",
+                },
+            ]
 
             candidate_urls = [
                 f"{MARKET_DATA_URL}/instruments/quotes",
@@ -72,77 +87,87 @@ class BrokerData:
 
             headers = self._get_headers()
             for u in candidate_urls:
-                try:
-                    response = client.post(u, json=payload, headers=headers, timeout=5.0)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data.get("type") == "success":
-                            result = data.get("result", {})
-                            quotes_list = (
-                                result.get("listQuotes", [])
-                                or result.get("quotesList", [])
-                                or result.get("quotes", [])
-                            )
-                            if quotes_list:
-                                item = quotes_list[0]
-                                if isinstance(item, str):
-                                    try:
-                                        item = json.loads(item)
-                                    except Exception:
-                                        item = {}
-                                touchline = item.get("Touchline") or item.get("touchline") or item
-                                if isinstance(touchline, str):
-                                    try:
-                                        touchline = json.loads(touchline)
-                                    except Exception:
-                                        touchline = {}
-
-                                def _qfloat(val, d=0.0):
-                                    try:
-                                        return float(val) if val is not None and val != "" else d
-                                    except (ValueError, TypeError):
-                                        return d
-
-                                def _qint(val, d=0):
-                                    try:
-                                        return int(float(val)) if val is not None and val != "" else d
-                                    except (ValueError, TypeError):
-                                        return d
-
-                                ltp = _qfloat(
-                                    touchline.get("LastTradedPrice")
-                                    or touchline.get("lastTradedPrice")
-                                    or touchline.get("LTP")
-                                    or touchline.get("ltp")
-                                    or item.get("LastTradedPrice")
-                                    or item.get("LTP")
+                for payload in candidate_payloads:
+                    try:
+                        response = client.post(u, json=payload, headers=headers, timeout=5.0)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("type") == "success":
+                                result = data.get("result", {})
+                                quotes_list = (
+                                    result.get("listQuotes", [])
+                                    or result.get("quotesList", [])
+                                    or result.get("quotes", [])
                                 )
-                                open_p = _qfloat(touchline.get("Open") or touchline.get("open") or item.get("Open"))
-                                high_p = _qfloat(touchline.get("High") or touchline.get("high") or item.get("High"))
-                                low_p = _qfloat(touchline.get("Low") or touchline.get("low") or item.get("Low"))
-                                close_p = _qfloat(touchline.get("Close") or touchline.get("close") or item.get("Close"))
-                                vol = _qint(
-                                    touchline.get("TotalQtyTraded")
-                                    or touchline.get("totalQtyTraded")
-                                    or touchline.get("Volume")
-                                    or touchline.get("volume")
-                                    or item.get("TotalQtyTraded")
-                                )
+                                if quotes_list:
+                                    item = quotes_list[0]
+                                    if isinstance(item, str):
+                                        try:
+                                            item = json.loads(item)
+                                        except Exception:
+                                            item = {}
+                                    touchline = item.get("Touchline") or item.get("touchline") or item
+                                    if isinstance(touchline, str):
+                                        try:
+                                            touchline = json.loads(touchline)
+                                        except Exception:
+                                            touchline = {}
 
-                                return {
-                                    "symbol": symbol,
-                                    "exchange": exchange,
-                                    "ltp": ltp,
-                                    "open": open_p,
-                                    "high": high_p,
-                                    "low": low_p,
-                                    "close": close_p,
-                                    "volume": vol,
-                                    "raw": data,
-                                }
-                        return data
-                except Exception as e:
-                    logger.debug(f"[AC Agarwal] Quote candidate {u} failed: {e}")
+                                    def _qfloat(val, d=0.0):
+                                        try:
+                                            return float(val) if val is not None and val != "" else d
+                                        except (ValueError, TypeError):
+                                            return d
+
+                                    def _qint(val, d=0):
+                                        try:
+                                            return int(float(val)) if val is not None and val != "" else d
+                                        except (ValueError, TypeError):
+                                            return d
+
+                                    ltp = _qfloat(
+                                        touchline.get("LastTradedPrice")
+                                        or touchline.get("lastTradedPrice")
+                                        or touchline.get("LTP")
+                                        or touchline.get("ltp")
+                                        or item.get("LastTradedPrice")
+                                        or item.get("LTP")
+                                    )
+                                    open_p = _qfloat(touchline.get("Open") or touchline.get("open") or item.get("Open"))
+                                    high_p = _qfloat(touchline.get("High") or touchline.get("high") or item.get("High"))
+                                    low_p = _qfloat(touchline.get("Low") or touchline.get("low") or item.get("Low"))
+                                    close_p = _qfloat(touchline.get("Close") or touchline.get("close") or item.get("Close"))
+                                    vol = _qint(
+                                        touchline.get("TotalTradedQuantity")
+                                        or touchline.get("TotalQtyTraded")
+                                        or touchline.get("totalQtyTraded")
+                                        or touchline.get("Volume")
+                                        or touchline.get("volume")
+                                        or item.get("TotalTradedQuantity")
+                                    )
+                                    ask_info = touchline.get("AskInfo") or {}
+                                    bid_info = touchline.get("BidInfo") or {}
+                                    ask_p = _qfloat(ask_info.get("Price") or ask_info.get("price") or 0.0)
+                                    bid_p = _qfloat(bid_info.get("Price") or bid_info.get("price") or 0.0)
+
+                                    return {
+                                        "symbol": symbol,
+                                        "exchange": exchange,
+                                        "ltp": ltp,
+                                        "open": open_p,
+                                        "high": high_p,
+                                        "low": low_p,
+                                        "close": close_p,
+                                        "prev_close": close_p,
+                                        "volume": vol,
+                                        "ask": ask_p,
+                                        "bid": bid_p,
+                                        "oi": 0,
+                                        "raw": data,
+                                    }
+                            return data
+                    except Exception as e:
+                        logger.debug(f"[AC Agarwal] Quote candidate {u} failed: {e}")
 
             return {"status": "error", "message": "Failed to fetch quotes from AC Agarwal"}
         except Exception as e:

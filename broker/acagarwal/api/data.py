@@ -337,7 +337,30 @@ class BrokerData:
                 combined_df = pd.concat(dfs, ignore_index=True)
                 if "timestamp" in combined_df.columns:
                     combined_df = combined_df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+                    numeric_cols = ["open", "high", "low", "close", "volume"]
+                    for col in numeric_cols:
+                        if col in combined_df.columns:
+                            combined_df[col] = pd.to_numeric(combined_df[col], errors="coerce").fillna(0.0)
                 return combined_df
+
+            # Fallback for daily data if OHLC query returned empty
+            if compression_value == "D":
+                try:
+                    quote = self.get_quotes(symbol, exchange)
+                    if isinstance(quote, dict) and float(quote.get("ltp") or 0) > 0:
+                        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        today_candle = {
+                            "timestamp": int(today.timestamp()),
+                            "open": float(quote.get("open") or quote.get("ltp")),
+                            "high": float(quote.get("high") or quote.get("ltp")),
+                            "low": float(quote.get("low") or quote.get("ltp")),
+                            "close": float(quote.get("ltp")),
+                            "volume": int(quote.get("volume") or 0),
+                            "oi": 0,
+                        }
+                        return pd.DataFrame([today_candle])
+                except Exception as q_err:
+                    logger.debug(f"[AC Agarwal] Daily fallback quote failed: {q_err}")
 
             return pd.DataFrame()
         except Exception as e:

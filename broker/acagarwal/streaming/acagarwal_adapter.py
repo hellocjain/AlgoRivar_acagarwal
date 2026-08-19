@@ -150,7 +150,29 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
     def transform_to_openalgo_format(self, raw_data: Any) -> Dict[str, Any]:
         try:
             if isinstance(raw_data, str):
-                raw_data = json.loads(raw_data)
+                try:
+                    raw_data = json.loads(raw_data)
+                except Exception:
+                    return {}
+
+            if not isinstance(raw_data, dict):
+                return {}
+
+            def _to_float(val, default=0.0):
+                if val is None or val == "":
+                    return default
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return default
+
+            def _to_int(val, default=0):
+                if val is None or val == "":
+                    return default
+                try:
+                    return int(float(val))
+                except (ValueError, TypeError):
+                    return default
 
             # In Symphony XTS, touchline details can be nested in Touchline or flat
             touchline = raw_data.get("Touchline") or raw_data.get("touchline") or raw_data
@@ -171,7 +193,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             exchange = ACAgarwalExchangeMapper.get_openalgo_exchange(exch_code)
             symbol = get_symbol(token, exchange) or token
 
-            ltp = float(
+            ltp = _to_float(
                 touchline.get("LastTradedPrice")
                 or touchline.get("lastTradedPrice")
                 or touchline.get("LTP")
@@ -180,17 +202,16 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 or raw_data.get("LTP")
                 or 0.0
             )
-            open_p = float(touchline.get("Open") or touchline.get("open") or raw_data.get("Open") or 0.0)
-            high_p = float(touchline.get("High") or touchline.get("high") or raw_data.get("High") or 0.0)
-            low_p = float(touchline.get("Low") or touchline.get("low") or raw_data.get("Low") or 0.0)
-            close_p = float(touchline.get("Close") or touchline.get("close") or raw_data.get("Close") or 0.0)
-            vol = int(
+            open_p = _to_float(touchline.get("Open") or touchline.get("open") or raw_data.get("Open"))
+            high_p = _to_float(touchline.get("High") or touchline.get("high") or raw_data.get("High"))
+            low_p = _to_float(touchline.get("Low") or touchline.get("low") or raw_data.get("Low"))
+            close_p = _to_float(touchline.get("Close") or touchline.get("close") or raw_data.get("Close"))
+            vol = _to_int(
                 touchline.get("TotalQtyTraded")
                 or touchline.get("totalQtyTraded")
                 or touchline.get("Volume")
                 or touchline.get("volume")
                 or raw_data.get("TotalQtyTraded")
-                or 0
             )
 
             # Extract depth book if present in Symphony XTS payload
@@ -201,16 +222,16 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             if isinstance(bids_raw, list):
                 for b in bids_raw:
                     if isinstance(b, dict):
-                        p = float(b.get("Price") or b.get("price") or b.get("Rate") or 0.0)
-                        q = int(b.get("Size") or b.get("quantity") or b.get("Qty") or 0)
+                        p = _to_float(b.get("Price") or b.get("price") or b.get("Rate"))
+                        q = _to_int(b.get("Size") or b.get("quantity") or b.get("Qty"))
                         buy_depth.append({"price": p, "quantity": q})
 
             sell_depth = []
             if isinstance(asks_raw, list):
                 for a in asks_raw:
                     if isinstance(a, dict):
-                        p = float(a.get("Price") or a.get("price") or a.get("Rate") or 0.0)
-                        q = int(a.get("Size") or a.get("quantity") or a.get("Qty") or 0)
+                        p = _to_float(a.get("Price") or a.get("price") or a.get("Rate"))
+                        q = _to_int(a.get("Size") or a.get("quantity") or a.get("Qty"))
                         sell_depth.append({"price": p, "quantity": q})
 
             result_dict = {

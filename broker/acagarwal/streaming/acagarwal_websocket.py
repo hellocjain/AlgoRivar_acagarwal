@@ -160,22 +160,69 @@ class ACAgarwalWebSocketClient:
         @self.sio.on("1512-json-full")
         @self.sio.on("touchline")
         @self.sio.on("ltp")
-        def on_market_data(data):
+        def on_market_data(data, *args):
             try:
-                logger.debug(f"[AC Agarwal WS] Raw Socket.IO packet received: {data}")
+                if not data and args:
+                    data = args[0]
+                if not data:
+                    return
+
+                if isinstance(data, bytes):
+                    try:
+                        data = data.decode("utf-8")
+                    except Exception:
+                        pass
+
                 if isinstance(data, str):
-                    data = json.loads(data)
-                if self.on_tick_callback:
-                    self.on_tick_callback(data)
+                    s = data.strip()
+                    if s.startswith("{") or s.startswith("["):
+                        try:
+                            data = json.loads(s)
+                        except Exception:
+                            return
+                    else:
+                        return
+
+                if isinstance(data, dict):
+                    if self.on_tick_callback:
+                        self.on_tick_callback(data)
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, str) and (item.strip().startswith("{") or item.strip().startswith("[")):
+                            try:
+                                item = json.loads(item.strip())
+                            except Exception:
+                                continue
+                        if isinstance(item, dict) and self.on_tick_callback:
+                            self.on_tick_callback(item)
             except Exception as e:
                 logger.error(f"[AC Agarwal WS] Error processing tick: {e}")
 
         @self.sio.on("1105-json-full")
         @self.sio.on("1105-json-partial")
-        def on_order_update(data):
+        def on_order_update(data, *args):
             try:
+                if not data and args:
+                    data = args[0]
+                if not data:
+                    return
+
+                if isinstance(data, bytes):
+                    try:
+                        data = data.decode("utf-8")
+                    except Exception:
+                        pass
+
                 if isinstance(data, str):
-                    data = json.loads(data)
+                    s = data.strip()
+                    if s.startswith("{") or s.startswith("["):
+                        try:
+                            data = json.loads(s)
+                        except Exception:
+                            return
+                    else:
+                        return
+
                 if self.on_order_update_callback:
                     self.on_order_update_callback(data)
             except Exception as e:

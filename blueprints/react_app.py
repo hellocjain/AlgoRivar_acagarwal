@@ -60,12 +60,9 @@ npm run build</pre>
 
     index_path = FRONTEND_DIST / "index.html"
     response = send_file(index_path, mimetype="text/html")
-    # index.html references content-hashed asset URLs, so it must always be
-    # revalidated — otherwise a browser could serve a stale shell pointing at
-    # chunks that no longer exist after an update. "no-cache" means
-    # revalidate-before-use (not "don't store"); this is what lets 180k users
-    # pick up frontend updates without ever clearing their cache.
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 

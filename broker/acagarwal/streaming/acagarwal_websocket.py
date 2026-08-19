@@ -291,55 +291,50 @@ class ACAgarwalWebSocketClient:
             return False
 
         try:
-            candidate_urls = [
-                f"{MARKET_DATA_URL}/instruments/subscription",
-                f"{BASE_URL}/marketdata/instruments/subscription",
-                f"{BASE_URL}/apimarketdata/instruments/subscription",
-            ]
+            mode_to_xts_code = {
+                1: 1512,  # LTP
+                2: 1501,  # Quote
+                3: 1502,  # Depth
+            }
+            xts_code = mode_to_xts_code.get(mode, 1502 if mode == 3 else 1501)
 
+            clean_instruments = []
+            for inst in instruments:
+                clean_instruments.append({
+                    "exchangeSegment": int(inst.get("exchangeSegment", 1)),
+                    "exchangeInstrumentID": str(inst.get("exchangeInstrumentID", "")),
+                })
+
+            sub_url = f"{MARKET_DATA_URL}/instruments/subscription"
+            payload = {
+                "instruments": clean_instruments,
+                "xtsMessageCode": xts_code,
+            }
             headers = {
-                "authorization": self.token,
+                "Authorization": self.token,
                 "Content-Type": "application/json",
             }
 
-            codes = [1502]
-            if mode == 3:
-                codes = [1502, 1505, 1501, 1512]
-            elif mode == 1:
-                codes = [1512, 1502, 1501]
+            logger.info(f"[AC Agarwal WS] Subscribing code {xts_code} at {sub_url} for {clean_instruments}")
+            res = requests.post(sub_url, json=payload, headers=headers, timeout=5)
 
-            success = False
-            for code in codes:
-                payload = {
-                    "instruments": instruments,
-                    "xtsMessageCode": code,
-                    "publishFormat": "JSON",
-                }
-                for u in candidate_urls:
-                    try:
-                        res = requests.post(u, json=payload, headers=headers, timeout=5)
-                        if res.status_code == 200:
-                            logger.info(f"[AC Agarwal WS] Subscribed code {code} successfully at: {u}")
-                            success = True
-                            # Process initial quote data from listQuotes if returned by XTS
-                            try:
-                                res_json = res.json()
-                                if res_json.get("type") == "success" and "result" in res_json:
-                                    list_quotes = res_json["result"].get("listQuotes", [])
-                                    for quote_str in list_quotes:
-                                        try:
-                                            quote_data = json.loads(quote_str) if isinstance(quote_str, str) else quote_str
-                                            if self.on_tick_callback and isinstance(quote_data, dict):
-                                                self.on_tick_callback(quote_data)
-                                        except Exception as parse_err:
-                                            logger.debug(f"[AC Agarwal WS] Initial quote parse error: {parse_err}")
-                            except Exception:
-                                pass
-                            break
-                    except Exception as e:
-                        logger.debug(f"[AC Agarwal WS] Subscription attempt for code {code} at {u} failed: {e}")
+            if res.status_code == 200:
+                result = res.json()
+                logger.info(f"[AC Agarwal WS] Subscription response: {result}")
+                if result.get("type") == "success" and "result" in result:
+                    list_quotes = result["result"].get("listQuotes", [])
+                    for quote_str in list_quotes:
+                        try:
+                            quote_data = json.loads(quote_str) if isinstance(quote_str, str) else quote_str
+                            if self.on_tick_callback and isinstance(quote_data, dict):
+                                self.on_tick_callback(quote_data)
+                        except Exception as e:
+                            logger.error(f"[AC Agarwal WS] Error parsing initial quote: {e}")
+                return True
+            else:
+                logger.error(f"[AC Agarwal WS] Subscription failed ({res.status_code}): {res.text}")
+                return False
 
-            return success
         except Exception as e:
             logger.error(f"[AC Agarwal WS] Subscription exception: {e}")
             return False

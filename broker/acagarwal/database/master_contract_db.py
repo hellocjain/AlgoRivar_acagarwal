@@ -152,18 +152,36 @@ def process_acagarwal_nfo_csv(path):
         return pd.DataFrame()
 
     df = pd.read_csv(file_path, low_memory=False)
+    df["ContractExpiration"] = pd.to_datetime(df["ContractExpiration"], errors="coerce")
+    df["StrikePrice"] = pd.to_numeric(df["StrikePrice"], errors="coerce").fillna(1.0)
+
+    def _build_sym(row):
+        try:
+            if pd.isna(row.get("ContractExpiration")):
+                return str(row.get("Description", ""))
+            exp_str = row["ContractExpiration"].strftime("%d%b%y").upper()
+            op_type = row.get("OptionType")
+            is_fut = op_type in [1, "1", "FUT", "XX"] or str(row.get("Series", "")).upper() == "FUT"
+            strike_str = ""
+            if not is_fut and pd.notna(row.get("StrikePrice")):
+                sp = float(row["StrikePrice"])
+                strike_str = str(int(sp)) if sp == int(sp) else str(sp)
+            opt_suffix = "FUT" if is_fut else ("CE" if op_type in [3, "3", "CE"] else "PE")
+            return f"{row['Name']}{exp_str}{strike_str}{opt_suffix}"
+        except Exception:
+            return str(row.get("Description", ""))
 
     token_df = pd.DataFrame()
-    token_df["symbol"] = df["Description"]
+    token_df["symbol"] = df.apply(_build_sym, axis=1)
     token_df["brsymbol"] = df["Description"]
     token_df["name"] = df["Name"]
     token_df["exchange"] = "NFO"
     token_df["brexchange"] = "NSEFO"
     token_df["token"] = df["ExchangeInstrumentID"].astype(str)
-    token_df["expiry"] = df["ContractExpiration"]
-    token_df["strike"] = pd.to_numeric(df["StrikePrice"], errors="coerce").fillna(1.0)
+    token_df["expiry"] = df["ContractExpiration"].dt.strftime("%d-%b-%y").str.upper().fillna("")
+    token_df["strike"] = df["StrikePrice"]
     token_df["lotsize"] = pd.to_numeric(df["LotSize"], errors="coerce").fillna(1).astype(int)
-    token_df["instrumenttype"] = df["Series"]
+    token_df["instrumenttype"] = df["OptionType"].map({1: "FUT", 3: "CE", 4: "PE"}).fillna(df["Series"])
     token_df["tick_size"] = pd.to_numeric(df["TickSize"], errors="coerce").fillna(0.05).astype(float)
 
     return token_df
@@ -175,18 +193,36 @@ def process_acagarwal_mcx_csv(path):
         return pd.DataFrame()
 
     df = pd.read_csv(file_path, low_memory=False)
+    df["ContractExpiration"] = pd.to_datetime(df["ContractExpiration"], errors="coerce")
+    df["StrikePrice"] = pd.to_numeric(df["StrikePrice"], errors="coerce").fillna(1.0)
+
+    def _build_sym(row):
+        try:
+            if pd.isna(row.get("ContractExpiration")):
+                return str(row.get("Description", ""))
+            exp_str = row["ContractExpiration"].strftime("%d%b%y").upper()
+            op_type = row.get("OptionType")
+            is_fut = op_type in [1, "1", "FUT", "XX"] or str(row.get("Series", "")).upper() == "FUT"
+            strike_str = ""
+            if not is_fut and pd.notna(row.get("StrikePrice")):
+                sp = float(row["StrikePrice"])
+                strike_str = str(int(sp)) if sp == int(sp) else str(sp)
+            opt_suffix = "FUT" if is_fut else ("CE" if op_type in [3, "3", "CE"] else "PE")
+            return f"{row['Name']}{exp_str}{strike_str}{opt_suffix}"
+        except Exception:
+            return str(row.get("Description", ""))
 
     token_df = pd.DataFrame()
-    token_df["symbol"] = df["Description"]
+    token_df["symbol"] = df.apply(_build_sym, axis=1)
     token_df["brsymbol"] = df["Description"]
     token_df["name"] = df["Name"]
     token_df["exchange"] = "MCX"
     token_df["brexchange"] = "MCXFO"
     token_df["token"] = df["ExchangeInstrumentID"].astype(str)
-    token_df["expiry"] = df["ContractExpiration"]
-    token_df["strike"] = pd.to_numeric(df["StrikePrice"], errors="coerce").fillna(1.0)
+    token_df["expiry"] = df["ContractExpiration"].dt.strftime("%d-%b-%y").str.upper().fillna("")
+    token_df["strike"] = df["StrikePrice"]
     token_df["lotsize"] = pd.to_numeric(df["LotSize"], errors="coerce").fillna(1).astype(int)
-    token_df["instrumenttype"] = df["Series"]
+    token_df["instrumenttype"] = df["OptionType"].map({1: "FUT", 3: "CE", 4: "PE"}).fillna(df["Series"])
     token_df["tick_size"] = pd.to_numeric(df["TickSize"], errors="coerce").fillna(0.05).astype(float)
 
     return token_df
@@ -221,18 +257,36 @@ def process_acagarwal_bfo_csv(path):
         return pd.DataFrame()
 
     df = pd.read_csv(file_path, low_memory=False)
+    df["ContractExpiration"] = pd.to_datetime(df["ContractExpiration"], errors="coerce")
+    df["StrikePrice"] = pd.to_numeric(df["StrikePrice"], errors="coerce").fillna(1.0)
+
+    def _build_sym(row):
+        try:
+            if pd.isna(row.get("ContractExpiration")):
+                return str(row.get("Description", ""))
+            exp_str = row["ContractExpiration"].strftime("%d%b%y").upper()
+            op_type = row.get("OptionType")
+            is_fut = op_type in [1, "1", "FUT", "XX"] or str(row.get("Series", "")).upper() == "FUT"
+            strike_str = ""
+            if not is_fut and pd.notna(row.get("StrikePrice")):
+                sp = float(row["StrikePrice"])
+                strike_str = str(int(sp)) if sp == int(sp) else str(sp)
+            opt_suffix = "FUT" if is_fut else ("CE" if op_type in [3, "3", "CE"] else "PE")
+            return f"{row['Name']}{exp_str}{strike_str}{opt_suffix}"
+        except Exception:
+            return str(row.get("Description", ""))
 
     token_df = pd.DataFrame()
-    token_df["symbol"] = df["Description"]
+    token_df["symbol"] = df.apply(_build_sym, axis=1)
     token_df["brsymbol"] = df["Description"]
     token_df["name"] = df["Name"]
     token_df["exchange"] = "BFO"
     token_df["brexchange"] = "BSEFO"
     token_df["token"] = df["ExchangeInstrumentID"].astype(str)
-    token_df["expiry"] = df["ContractExpiration"]
-    token_df["strike"] = pd.to_numeric(df["StrikePrice"], errors="coerce").fillna(1.0)
+    token_df["expiry"] = df["ContractExpiration"].dt.strftime("%d-%b-%y").str.upper().fillna("")
+    token_df["strike"] = df["StrikePrice"]
     token_df["lotsize"] = pd.to_numeric(df["LotSize"], errors="coerce").fillna(1).astype(int)
-    token_df["instrumenttype"] = df["Series"]
+    token_df["instrumenttype"] = df["OptionType"].map({1: "FUT", 3: "CE", 4: "PE"}).fillna(df["Series"])
     token_df["tick_size"] = pd.to_numeric(df["TickSize"], errors="coerce").fillna(0.05).astype(float)
 
     return token_df

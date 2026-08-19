@@ -97,11 +97,11 @@ def get_feed_token():
     First success wins.
     """
     try:
-        BROKER_API_KEY_MARKET = os.getenv("BROKER_API_KEY_MARKET")
-        BROKER_API_SECRET_MARKET = os.getenv("BROKER_API_SECRET_MARKET")
+        BROKER_API_KEY_MARKET = os.getenv("BROKER_API_KEY_MARKET") or os.getenv("BROKER_API_KEY")
+        BROKER_API_SECRET_MARKET = os.getenv("BROKER_API_SECRET_MARKET") or os.getenv("BROKER_API_SECRET")
 
         if not BROKER_API_KEY_MARKET or not BROKER_API_SECRET_MARKET:
-            return None, None, "Missing Market Data keys (optional)"
+            return None, None, "Missing Market Data keys"
 
         # Quirk 1: source must be literal string "WEBAPI" (all caps)
         feed_payload = {

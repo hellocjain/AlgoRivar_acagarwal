@@ -167,12 +167,16 @@ export default function Trading() {
           fetch('/api/websocket/config').then((r) => r.json()),
         ])
         if (!alive) return
-        if (keyRes.status !== 'success') {
-          setNoApiKey(true)
-          return
-        }
         setApiKey(keyRes.api_key)
-        setWsUrl(cfgRes.websocket_url || 'ws://127.0.0.1:8765')
+        const host = window.location.hostname
+        const defaultWs = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + host + ':8765'
+        let targetWs = cfgRes.websocket_url || defaultWs
+        if (targetWs.includes('localhost') || targetWs.includes('127.0.0.1')) {
+          if (host !== 'localhost' && host !== '127.0.0.1') {
+            targetWs = defaultWs
+          }
+        }
+        setWsUrl(targetWs)
       } catch {
         if (alive) setNoApiKey(true)
       }

@@ -32,6 +32,15 @@ class BrokerData:
     def _get_headers(self):
         if not self.feed_token:
             try:
+                from database.auth_db import Auth, decrypt_token
+                auth_rec = Auth.query.filter_by(broker="acagarwal").order_by(Auth.id.desc()).first()
+                if auth_rec and auth_rec.feed_token:
+                    self.feed_token = decrypt_token(auth_rec.feed_token)
+            except Exception as db_err:
+                logger.debug(f"[AC Agarwal] DB feed token lookup notice: {db_err}")
+
+        if not self.feed_token:
+            try:
                 from broker.acagarwal.api.auth_api import get_feed_token
                 feed_tok, _, _ = get_feed_token()
                 if feed_tok:
@@ -306,13 +315,13 @@ class BrokerData:
                                                 try:
                                                     parsed_bars.append(
                                                         {
-                                                            "timestamp": int(fields[0]),
+                                                            "timestamp": int(float(fields[0])),
                                                             "open": float(fields[1]),
                                                             "high": float(fields[2]),
                                                             "low": float(fields[3]),
                                                             "close": float(fields[4]),
-                                                            "volume": int(fields[5]),
-                                                            "oi": int(fields[6]) if len(fields) > 6 and str(fields[6]).isdigit() else 0,
+                                                            "volume": int(float(fields[5])),
+                                                            "oi": int(float(fields[6])) if len(fields) > 6 and str(fields[6]).replace('.', '', 1).isdigit() else 0,
                                                         }
                                                     )
                                                 except (ValueError, IndexError):
@@ -343,24 +352,23 @@ class BrokerData:
                             combined_df[col] = pd.to_numeric(combined_df[col], errors="coerce").fillna(0.0)
                 return combined_df
 
-            # Fallback for daily data if OHLC query returned empty
-            if compression_value == "D":
-                try:
-                    quote = self.get_quotes(symbol, exchange)
-                    if isinstance(quote, dict) and float(quote.get("ltp") or 0) > 0:
-                        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                        today_candle = {
-                            "timestamp": int(today.timestamp()),
-                            "open": float(quote.get("open") or quote.get("ltp")),
-                            "high": float(quote.get("high") or quote.get("ltp")),
-                            "low": float(quote.get("low") or quote.get("ltp")),
-                            "close": float(quote.get("ltp")),
-                            "volume": int(quote.get("volume") or 0),
-                            "oi": 0,
-                        }
-                        return pd.DataFrame([today_candle])
-                except Exception as q_err:
-                    logger.debug(f"[AC Agarwal] Daily fallback quote failed: {q_err}")
+            # Fallback if OHLC query returned empty: generate baseline candle from live touchline quote
+            try:
+                quote = self.get_quotes(symbol, exchange)
+                if isinstance(quote, dict) and float(quote.get("ltp") or 0) > 0:
+                    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                    today_candle = {
+                        "timestamp": int(today.timestamp()),
+                        "open": float(quote.get("open") or quote.get("ltp")),
+                        "high": float(quote.get("high") or quote.get("ltp")),
+                        "low": float(quote.get("low") or quote.get("ltp")),
+                        "close": float(quote.get("ltp")),
+                        "volume": int(quote.get("volume") or 0),
+                        "oi": 0,
+                    }
+                    return pd.DataFrame([today_candle])
+            except Exception as q_err:
+                logger.debug(f"[AC Agarwal] Fallback quote candle generation notice: {q_err}")
 
             return pd.DataFrame()
         except Exception as e:

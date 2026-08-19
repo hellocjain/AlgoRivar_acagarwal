@@ -6,15 +6,26 @@ Handles reading and updating AC Agarwal broker credentials in memory and in the 
 
 import os
 import re
+from functools import wraps
 
 from flask import Blueprint, jsonify, request, session
 
 from utils.logging import get_logger
-from utils.session import check_session_validity
 
 logger = get_logger(__name__)
 
 broker_credentials_bp = Blueprint("broker_credentials_bp", __name__, url_prefix="/api/broker")
+
+
+def require_app_user(f):
+    """Decorator to ensure user is logged in to the dashboard app."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("user"):
+            return jsonify({"status": "error", "message": "Authentication required. Please log in."}), 401
+        return f(*args, **kwargs)
+
+    return decorated_function
 
 
 def get_env_path():
@@ -84,7 +95,7 @@ def get_broker_from_redirect_url(redirect_url: str) -> str:
 
 
 @broker_credentials_bp.route("/credentials", methods=["GET"])
-@check_session_validity
+@require_app_user
 def get_credentials():
     """Get current broker credentials (masked)."""
     try:
@@ -142,7 +153,7 @@ def get_credentials():
 
 
 @broker_credentials_bp.route("/credentials", methods=["POST"])
-@check_session_validity
+@require_app_user
 def update_credentials():
     """Update broker credentials in .env file and memory."""
     try:
@@ -319,7 +330,7 @@ def direct_connect():
 
 
 @broker_credentials_bp.route("/capabilities", methods=["GET"])
-@check_session_validity
+@require_app_user
 def get_capabilities():
     """Return broker capabilities from cached plugin.json."""
     from utils.plugin_loader import get_broker_capabilities

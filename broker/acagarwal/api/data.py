@@ -138,14 +138,41 @@ class BrokerData:
             end_dt = pd.to_datetime(end_date)
             from_str = start_dt.strftime("%b %d %Y 000000")
             to_str = end_dt.strftime("%b %d %Y 235959")
+            from_str_alt = start_dt.strftime("%b %d %Y 091500")
+            to_str_alt = end_dt.strftime("%b %d %Y 153000")
 
-            params = {
-                "exchangeSegment": exchange_segment,
-                "exchangeInstrumentID": str(token),
-                "startTime": from_str,
-                "endTime": to_str,
-                "compressionValue": compression_value,
-            }
+            numeric_seg = str(map_exchange_code(exchange))
+
+            candidate_params = [
+                {
+                    "exchangeSegment": exchange_segment,
+                    "exchangeInstrumentID": str(token),
+                    "startTime": from_str,
+                    "endTime": to_str,
+                    "compressionValue": compression_value,
+                },
+                {
+                    "exchangeSegment": numeric_seg,
+                    "exchangeInstrumentID": str(token),
+                    "startTime": from_str,
+                    "endTime": to_str,
+                    "compressionValue": compression_value,
+                },
+                {
+                    "exchangeSegment": exchange_segment,
+                    "exchangeInstrumentID": str(token),
+                    "startTime": from_str_alt,
+                    "endTime": to_str_alt,
+                    "compressionValue": compression_value,
+                },
+                {
+                    "exchangeSegment": numeric_seg,
+                    "exchangeInstrumentID": str(token),
+                    "startTime": from_str_alt,
+                    "endTime": to_str_alt,
+                    "compressionValue": compression_value,
+                },
+            ]
 
             candidate_urls = [
                 f"{MARKET_DATA_URL}/instruments/ohlc",
@@ -155,43 +182,44 @@ class BrokerData:
 
             headers = self._get_headers()
             for url in candidate_urls:
-                try:
-                    response = client.get(url, params=params, headers=headers, timeout=10.0)
-                    if response.status_code == 200:
-                        res = response.json()
-                        if res.get("type") == "success":
-                            result = res.get("result", {})
-                            raw_data = (
-                                result.get("dataReponse")
-                                or result.get("dataResponse")
-                                or result.get("data", "")
-                            )
-                            if isinstance(raw_data, str) and raw_data.strip():
-                                rows = raw_data.strip().split(",")
-                                parsed_bars = []
-                                for row in rows:
-                                    fields = row.split("|")
-                                    if len(fields) >= 6:
-                                        try:
-                                            parsed_bars.append(
-                                                {
-                                                    "timestamp": int(fields[0]),
-                                                    "open": float(fields[1]),
-                                                    "high": float(fields[2]),
-                                                    "low": float(fields[3]),
-                                                    "close": float(fields[4]),
-                                                    "volume": int(fields[5]),
-                                                    "oi": int(fields[6]) if len(fields) > 6 and fields[6].isdigit() else 0,
-                                                }
-                                            )
-                                        except (ValueError, IndexError):
-                                            continue
-                                if parsed_bars:
-                                    return pd.DataFrame(parsed_bars)
-                            elif isinstance(raw_data, list) and len(raw_data) > 0:
-                                return pd.DataFrame(raw_data)
-                except Exception as e:
-                    logger.debug(f"[AC Agarwal] History candidate {url} failed: {e}")
+                for params in candidate_params:
+                    try:
+                        response = client.get(url, params=params, headers=headers, timeout=5.0)
+                        if response.status_code == 200:
+                            res = response.json()
+                            if res.get("type") == "success":
+                                result = res.get("result", {})
+                                raw_data = (
+                                    result.get("dataReponse")
+                                    or result.get("dataResponse")
+                                    or result.get("data", "")
+                                )
+                                if isinstance(raw_data, str) and raw_data.strip():
+                                    rows = raw_data.strip().split(",")
+                                    parsed_bars = []
+                                    for row in rows:
+                                        fields = row.split("|")
+                                        if len(fields) >= 6:
+                                            try:
+                                                parsed_bars.append(
+                                                    {
+                                                        "timestamp": int(fields[0]),
+                                                        "open": float(fields[1]),
+                                                        "high": float(fields[2]),
+                                                        "low": float(fields[3]),
+                                                        "close": float(fields[4]),
+                                                        "volume": int(fields[5]),
+                                                        "oi": int(fields[6]) if len(fields) > 6 and fields[6].isdigit() else 0,
+                                                    }
+                                                )
+                                            except (ValueError, IndexError):
+                                                continue
+                                    if parsed_bars:
+                                        return pd.DataFrame(parsed_bars)
+                                elif isinstance(raw_data, list) and len(raw_data) > 0:
+                                    return pd.DataFrame(raw_data)
+                    except Exception as e:
+                        logger.debug(f"[AC Agarwal] History candidate {url} failed: {e}")
 
             return pd.DataFrame()
         except Exception as e:

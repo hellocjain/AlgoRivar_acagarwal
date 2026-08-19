@@ -1729,9 +1729,33 @@ export class TradingTerminal {
       return false // caller may fall back (e.g. to the default symbol)
     }
     if (!this.rawBars.length) {
-      if (!opts.silent)
-        this.toast(`no history for ${this.sym.symbol} ${this.sym.exchange} ${this.interval}`, 'err')
-      return false
+      let quoteLtp = 0
+      try {
+        const q = await this.api<{ data?: { ltp?: number; close?: number; open?: number } }>('quotes', {
+          symbol: this.sym.symbol,
+          exchange: this.sym.exchange,
+        })
+        quoteLtp = Number(q.data?.ltp || q.data?.close || q.data?.open || 0)
+      } catch {
+        /* ignore quote lookup */
+      }
+      if (quoteLtp > 0) {
+        const now = Math.floor(Date.now() / 1000)
+        this.rawBars = [
+          {
+            time: now - 300,
+            open: quoteLtp,
+            high: quoteLtp,
+            low: quoteLtp,
+            close: quoteLtp,
+            volume: 0,
+          },
+        ]
+      } else {
+        if (!opts.silent)
+          this.toast(`no history for ${this.sym.symbol} ${this.sym.exchange} ${this.interval}`, 'err')
+        return false
+      }
     }
     this.prevClose =
       this.rawBars.length > 1

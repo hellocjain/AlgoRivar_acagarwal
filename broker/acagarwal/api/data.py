@@ -197,6 +197,7 @@ class BrokerData:
 
             norm_interval = str(interval).lower().strip()
             compression_map = {
+                "1s": "1",
                 "1m": "60",
                 "1": "60",
                 "2m": "120",
@@ -214,63 +215,45 @@ class BrokerData:
                 "60m": "3600",
                 "60": "3600",
                 "1h": "3600",
-                "d": "86400",
-                "1d": "86400",
-                "day": "86400",
+                "d": "D",
+                "1d": "D",
+                "day": "D",
             }
             compression_value = compression_map.get(norm_interval, "300")
 
             start_dt = pd.to_datetime(start_date)
             end_dt = pd.to_datetime(end_date)
-            from_str = start_dt.strftime("%b %d %Y 000000")
-            to_str = end_dt.strftime("%b %d %Y 235959")
-            from_str_alt = start_dt.strftime("%b %d %Y 091500")
-            to_str_alt = end_dt.strftime("%b %d %Y 153000")
+            from_date = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            to_date = end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
 
-            numeric_seg = str(map_exchange_code(exchange))
-
-            candidate_params = [
-                {
-                    "exchangeSegment": exchange_segment,
-                    "exchangeInstrumentID": str(token),
-                    "startTime": from_str,
-                    "endTime": to_str,
-                    "compressionValue": compression_value,
-                },
-                {
-                    "exchangeSegment": numeric_seg,
-                    "exchangeInstrumentID": str(token),
-                    "startTime": from_str,
-                    "endTime": to_str,
-                    "compressionValue": compression_value,
-                },
-                {
-                    "exchangeSegment": exchange_segment,
-                    "exchangeInstrumentID": str(token),
-                    "startTime": from_str_alt,
-                    "endTime": to_str_alt,
-                    "compressionValue": compression_value,
-                },
-                {
-                    "exchangeSegment": numeric_seg,
-                    "exchangeInstrumentID": str(token),
-                    "startTime": from_str_alt,
-                    "endTime": to_str_alt,
-                    "compressionValue": compression_value,
-                },
-            ]
+            dfs = []
+            current_start = from_date
 
             candidate_urls = [
                 f"{MARKET_DATA_URL}/instruments/ohlc",
                 f"{BASE_URL}/marketdata/instruments/ohlc",
                 f"{BASE_URL}/apimarketdata/instruments/ohlc",
             ]
-
             headers = self._get_headers()
-            for url in candidate_urls:
-                for params in candidate_params:
+
+            # Symphony XTS allows max 6-7 days per OHLC request
+            while current_start <= to_date:
+                current_end = min(current_start + timedelta(days=6), to_date)
+                from_str = current_start.strftime("%b %d %Y %H%M%S")
+                to_str = current_end.strftime("%b %d %Y %H%M%S")
+
+                params = {
+                    "exchangeSegment": exchange_segment,
+                    "exchangeInstrumentID": str(token),
+                    "startTime": from_str,
+                    "endTime": to_str,
+                    "compressionValue": compression_value,
+                }
+
+                chunk_df = None
+                for u in candidate_urls:
                     try:
-                        response = client.get(url, params=params, headers=headers, timeout=5.0)
+                        response = client.get(u, params=params, headers=headers, timeout=5.0)
                         if response.status_code == 200:
                             res = response.json()
                             if res.get("type") == "success":
@@ -295,17 +278,30 @@ class BrokerData:
                                                         "low": float(fields[3]),
                                                         "close": float(fields[4]),
                                                         "volume": int(fields[5]),
-                                                        "oi": int(fields[6]) if len(fields) > 6 and fields[6].isdigit() else 0,
+                                                        "oi": int(fields[6]) if len(fields) > 6 and str(fields[6]).isdigit() else 0,
                                                     }
                                                 )
                                             except (ValueError, IndexError):
                                                 continue
                                     if parsed_bars:
-                                        return pd.DataFrame(parsed_bars)
+                                        chunk_df = pd.DataFrame(parsed_bars)
+                                        break
                                 elif isinstance(raw_data, list) and len(raw_data) > 0:
-                                    return pd.DataFrame(raw_data)
+                                    chunk_df = pd.DataFrame(raw_data)
+                                    break
                     except Exception as e:
-                        logger.debug(f"[AC Agarwal] History candidate {url} failed: {e}")
+                        logger.debug(f"[AC Agarwal] History candidate {u} failed: {e}")
+
+                if chunk_df is not None and not chunk_df.empty:
+                    dfs.append(chunk_df)
+
+                current_start = current_end + timedelta(days=1)
+
+            if dfs:
+                combined_df = pd.concat(dfs, ignore_index=True)
+                if "timestamp" in combined_df.columns:
+                    combined_df = combined_df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+                return combined_df
 
             return pd.DataFrame()
         except Exception as e:

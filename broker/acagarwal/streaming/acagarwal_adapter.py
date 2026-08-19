@@ -1,5 +1,6 @@
 # broker/acagarwal/streaming/acagarwal_adapter.py
 
+import json
 import logging
 import os
 import sys
@@ -69,6 +70,47 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
         if self.ws_client:
             self.ws_client.disconnect()
         self.running = False
+
+    def subscribe(self, symbol: str, exchange: str, mode: int = 2, depth_level: int = 5) -> dict:
+        """
+        Subscribe to market data for a symbol.
+        """
+        try:
+            from database.token_db import get_token
+            token = get_token(symbol, exchange)
+            if not token:
+                return {"status": "error", "message": f"Token not found for {exchange}:{symbol}"}
+
+            exch_code = ACAgarwalExchangeMapper.get_xts_exchange(exchange)
+            instruments = [{
+                "exchangeSegment": exch_code,
+                "exchangeInstrumentID": token,
+            }]
+
+            if self.ws_client:
+                success = self.ws_client.subscribe(instruments, mode=mode)
+                return {"status": "success" if success else "error"}
+            return {"status": "error", "message": "WebSocket client not initialized"}
+        except Exception as e:
+            self.logger.error(f"[AC Agarwal WS] Subscribe error: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def unsubscribe(self, symbol: str, exchange: str, mode: int = 2) -> dict:
+        """
+        Unsubscribe from market data for a symbol.
+        """
+        try:
+            from database.token_db import get_token
+            token = get_token(symbol, exchange)
+            if not token:
+                return {"status": "error", "message": f"Token not found for {exchange}:{symbol}"}
+
+            if self.ws_client:
+                return {"status": "success"}
+            return {"status": "error", "message": "WebSocket client not initialized"}
+        except Exception as e:
+            self.logger.error(f"[AC Agarwal WS] Unsubscribe error: {e}")
+            return {"status": "error", "message": str(e)}
 
     def _handle_tick(self, raw_tick: dict):
         try:

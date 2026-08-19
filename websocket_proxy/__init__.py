@@ -27,11 +27,14 @@ from .server import main as websocket_main
 # Set up logger
 logger = logging.getLogger(__name__)
 
-# Import the AC Agarwal WebSocket Adapter
-from broker.acagarwal.streaming.acagarwal_adapter import ACAgarwalWebSocketAdapter
+def _register_acagarwal():
+    try:
+        from broker.acagarwal.streaming.acagarwal_adapter import ACAgarwalWebSocketAdapter
+        register_adapter("acagarwal", ACAgarwalWebSocketAdapter)
+    except Exception as e:
+        logger.debug(f"AC Agarwal adapter auto-register: {e}")
 
-# Register AC Agarwal adapter
-register_adapter("acagarwal", ACAgarwalWebSocketAdapter)
+_register_acagarwal()
 
 __all__ = [
     # Core classes

@@ -54,33 +54,35 @@ class ACAgarwalWebSocketClient:
         self.lock = threading.Lock()
 
     def _login(self) -> bool:
-        try:
-            url = f"{MARKET_DATA_URL}/auth/login"
-            payload = {
-                "appKey": self.api_key,
-                "secretKey": self.api_secret,
-                "source": "WEBAPI",
-            }
-            headers = {"Content-Type": "application/json"}
+        candidate_paths = [
+            "/apimarketdata/auth/login",
+            "/marketdata/auth/login",
+            "/apibinarymarketdata/auth/login",
+        ]
+        payload = {
+            "appKey": self.api_key,
+            "secretKey": self.api_secret,
+            "source": "WEBAPI",
+        }
+        headers = {"Content-Type": "application/json"}
 
-            logger.info(f"[AC Agarwal WS] Logging in to Market Data API at: {url}")
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
+        for path in candidate_paths:
+            try:
+                url = f"{self.base_url}{path}"
+                logger.info(f"[AC Agarwal WS] Logging in to Market Data API at: {url}")
+                response = requests.post(url, json=payload, headers=headers, timeout=5)
 
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("type") == "success":
-                    self.token = data["result"].get("token")
-                    logger.info("[AC Agarwal WS] Market Data login successful")
-                    return True
-                else:
-                    logger.error(f"[AC Agarwal WS] Login failed: {data.get('description')}")
-                    return False
-            else:
-                logger.error(f"[AC Agarwal WS] Login HTTP error: {response.status_code}")
-                return False
-        except Exception as e:
-            logger.error(f"[AC Agarwal WS] Login exception: {e}")
-            return False
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("type") == "success":
+                        self.token = data["result"].get("token")
+                        logger.info(f"[AC Agarwal WS] Market Data login successful via {path}")
+                        return True
+            except Exception as e:
+                logger.debug(f"[AC Agarwal WS] Login attempt failed at {path}: {e}")
+
+        logger.error("[AC Agarwal WS] Market data login failed across all endpoints")
+        return False
 
     def connect(self) -> bool:
         with self.lock:
@@ -91,28 +93,36 @@ class ACAgarwalWebSocketClient:
                 if not self._login():
                     return False
 
-            try:
-                self.sio = socketio.Client(
-                    reconnection=True,
-                    reconnection_attempts=self.max_reconnect_attempts,
-                    reconnection_delay=self.reconnect_delay,
-                    reconnection_delay_max=self.max_reconnect_delay,
-                    logger=False,
-                    engineio_logger=False,
-                )
+            candidate_socket_paths = [
+                "/apimarketdata/socket.io",
+                "/marketdata/socket.io",
+                "/socket.io",
+            ]
 
-                self._register_events()
+            for spath in candidate_socket_paths:
+                try:
+                    self.sio = socketio.Client(
+                        reconnection=True,
+                        reconnection_attempts=self.max_reconnect_attempts,
+                        reconnection_delay=self.reconnect_delay,
+                        reconnection_delay_max=self.max_reconnect_delay,
+                        logger=False,
+                        engineio_logger=False,
+                    )
 
-                ws_url = f"{self.base_url}?token={self.token}&userID={self.user_id}&source=WEBAPI"
-                logger.info(f"[AC Agarwal WS] Connecting Socket.IO client...")
-                self.sio.connect(ws_url, socketio_path=self.SOCKET_PATH, transports=["websocket"])
+                    self._register_events()
 
-                self.running = True
-                return True
-            except Exception as e:
-                logger.error(f"[AC Agarwal WS] Socket.IO connection failed: {e}")
-                self.connected = False
-                return False
+                    ws_url = f"{self.base_url}?token={self.token}&userID={self.user_id}&source=WEBAPI"
+                    logger.info(f"[AC Agarwal WS] Connecting Socket.IO client at {spath}...")
+                    self.sio.connect(ws_url, socketio_path=spath, transports=["websocket"])
+
+                    self.running = True
+                    return True
+                except Exception as e:
+                    logger.debug(f"[AC Agarwal WS] Socket.IO connection attempt failed at {spath}: {e}")
+
+            self.connected = False
+            return False
 
     def disconnect(self):
         with self.lock:

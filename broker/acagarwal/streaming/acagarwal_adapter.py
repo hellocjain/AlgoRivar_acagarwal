@@ -61,10 +61,13 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
         self.ws_client.on_order_update_callback = self._handle_order_update
         self.running = True
 
-    def connect(self) -> bool:
+    def connect(self) -> dict:
         if self.ws_client:
-            return self.ws_client.connect()
-        return False
+            success = self.ws_client.connect()
+            if success:
+                return {"status": "success"}
+            return {"status": "error", "message": "Failed to connect to AC Agarwal WebSocket"}
+        return {"status": "error", "message": "WebSocket client not initialized"}
 
     def disconnect(self) -> None:
         if self.ws_client:

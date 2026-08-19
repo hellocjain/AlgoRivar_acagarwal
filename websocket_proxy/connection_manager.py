@@ -548,15 +548,19 @@ class ConnectionPool:
             try:
                 if self.adapters:
                     result = self.adapters[0].connect()
-                    # Handle both response formats from adapters:
+                    # Handle all response formats from adapters:
                     # - {"success": False, "error": "..."} (ConnectionPool format)
                     # - {"status": "error", "code": "...", "message": "..."} (Adapter format)
-                    is_error = (
-                        (result and result.get("success") == False) or
-                        (result and result.get("status") == "error")
-                    )
-                    if is_error:
+                    # - boolean True / False / None
+                    if isinstance(result, bool):
+                        is_error = not result
+                        error_msg = "Connection failed" if is_error else "Connection successful"
+                    elif isinstance(result, dict):
+                        is_error = (result.get("success") is False) or (result.get("status") == "error")
                         error_msg = result.get("message", result.get("error", "Connection failed"))
+                    else:
+                        is_error = not bool(result)
+                        error_msg = "Connection failed"
                         # Issue #1419: try recovery once if this looks like a stale
                         # auth token (new trading day, etc.) before surfacing the
                         # error. _attempt_auth_recovery() does not call back into

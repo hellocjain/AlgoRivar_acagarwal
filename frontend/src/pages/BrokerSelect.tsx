@@ -1,108 +1,40 @@
-import { BookOpen, ExternalLink, Info, Loader2 } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Key, Loader2, ShieldCheck, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { webClient } from '@/api/client'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useAuthStore } from '@/stores/authStore'
-
-// All supported brokers with their display names and auth types
-const allBrokers = [
-  { id: 'fivepaisa', name: '5 Paisa', authType: 'totp' },
-  { id: 'fivepaisaxts', name: '5 Paisa (XTS)', authType: 'totp' },
-  { id: 'aliceblue', name: 'Alice Blue', authType: 'totp' },
-  { id: 'angel', name: 'Angel One', authType: 'totp' },
-  { id: 'arrow', name: 'Arrow', authType: 'oauth' },
-  { id: 'compositedge', name: 'CompositEdge', authType: 'oauth' },
-  { id: 'dhan', name: 'Dhan', authType: 'oauth' },
-  { id: 'deltaexchange', name: 'Delta Exchange', authType: 'totp' },
-  { id: 'indmoney', name: 'IndMoney', authType: 'totp' },
-  { id: 'dhan_sandbox', name: 'Dhan (Sandbox)', authType: 'totp' },
-  { id: 'definedge', name: 'Definedge', authType: 'totp' },
-  { id: 'firstock', name: 'Firstock', authType: 'totp' },
-  { id: 'flattrade', name: 'Flattrade', authType: 'oauth' },
-  { id: 'motilal', name: 'Motilal Oswal', authType: 'totp' },
-  { id: 'fyers', name: 'Fyers', authType: 'oauth' },
-  { id: 'groww', name: 'Groww', authType: 'totp' },
-  { id: 'hdfcsecurities', name: 'HDFC Securities', authType: 'oauth' },
-  { id: 'hdfcsky', name: 'HDFC Sky', authType: 'oauth' },
-  { id: 'ibulls', name: 'Ibulls', authType: 'totp' },
-  { id: 'iifl', name: 'IIFL', authType: 'totp' },
-  { id: 'iiflcapital', name: 'IIFL Capital', authType: 'oauth' },
-  { id: 'jainamxts', name: 'JainamXts', authType: 'totp' },
-  { id: 'kotak', name: 'Kotak Securities', authType: 'totp' },
-  { id: 'mstock', name: 'mStock by Mirae Asset', authType: 'totp' },
-  { id: 'nubra', name: 'Nubra', authType: 'totp' },
-  { id: 'paytm', name: 'Paytm Money', authType: 'oauth' },
-  { id: 'pocketful', name: 'Pocketful', authType: 'oauth' },
-  { id: 'rmoney', name: 'RMoney', authType: 'oauth' },
-  { id: 'samco', name: 'Samco', authType: 'totp' },
-  { id: 'shoonya', name: 'Shoonya', authType: 'totp' },
-  { id: 'tradejini', name: 'Tradejini', authType: 'totp' },
-  { id: 'tradesmart', name: 'TradeSmart', authType: 'oauth' },
-  { id: 'upstox', name: 'Upstox', authType: 'oauth' },
-  { id: 'wisdom', name: 'Wisdom Capital', authType: 'totp' },
-  { id: 'zebu', name: 'Zebu', authType: 'totp' },
-  { id: 'zerodha', name: 'Zerodha', authType: 'oauth' },
-] as const
-
-interface BrokerConfig {
-  broker_name: string
-  broker_api_key: string
-  redirect_url: string
-}
-
-// Helper function to get Flattrade API key
-function getFlattradeApiKey(fullKey: string): string {
-  if (!fullKey) return ''
-  const parts = fullKey.split(':::')
-  return parts.length > 1 ? parts[1] : fullKey
-}
-
-// Generate random state for OAuth
-function generateRandomState(): string {
-  const length = 16
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let result = ''
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
-}
 
 export default function BrokerSelect() {
   const { user } = useAuthStore()
-  const [selectedBroker, setSelectedBroker] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [brokerConfig, setBrokerConfig] = useState<BrokerConfig | null>(null)
+
+  // Direct Frontend API Key & Client ID entry state
+  const [clientId, setClientId] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [apiSecret, setApiSecret] = useState('')
+  const [apiKeyMarket, setApiKeyMarket] = useState('')
+  const [apiSecretMarket, setApiSecretMarket] = useState('')
+  const [showMarketKeys, setShowMarketKeys] = useState(false)
 
   useEffect(() => {
-    // Fetch broker configuration
+    // Fetch current credentials to pre-fill client ID if existing
     const fetchBrokerConfig = async () => {
       try {
-        const response = await fetch('/auth/broker-config', {
-          credentials: 'include',
-        })
-        const data = await response.json()
-
-        if (data.status === 'success') {
-          setBrokerConfig(data)
-          // Auto-select the configured broker
-          setSelectedBroker(data.broker_name)
-        } else {
-          setError(data.message || 'Failed to load broker configuration')
+        const response = await webClient.get('/api/broker/credentials')
+        if (response.data?.status === 'success' && response.data.data) {
+          const creds = response.data.data
+          if (creds.client_id) {
+            setClientId(creds.client_id)
+          }
         }
       } catch {
-        setError('Failed to load broker configuration')
+        // Ignore fallback
       } finally {
         setIsLoading(false)
       }
@@ -111,126 +43,41 @@ export default function BrokerSelect() {
     fetchBrokerConfig()
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!selectedBroker) {
-      setError('Please select a broker')
-      return
-    }
-
-    if (!brokerConfig) {
-      setError('Broker configuration not loaded')
-      return
-    }
-
+    setError(null)
     setIsSubmitting(true)
-    let loginUrl = ''
 
-    const { broker_api_key, redirect_url } = brokerConfig
-
-    // Build login URL based on broker type (matching original broker.html logic)
-    switch (selectedBroker) {
-      case 'fivepaisa':
-      case 'fivepaisaxts':
-      case 'aliceblue':
-      case 'angel':
-      case 'mstock':
-      case 'indmoney':
-      case 'deltaexchange':
-      case 'jainamxts':
-      case 'dhan_sandbox':
-      case 'definedge':
-      case 'firstock':
-      case 'samco':
-      case 'motilal':
-      case 'nubra':
-      case 'groww':
-      case 'ibulls':
-      case 'iifl':
-      case 'kotak':
-      case 'rmoney':
-      case 'shoonya':
-      case 'tradejini':
-      case 'tradesmart':
-      case 'wisdom':
-      case 'zebu':
-        // Brokers using callback route (form-based or redirect-based)
-        loginUrl = `/${selectedBroker}/callback`
-        break
-
-      case 'iiflcapital':
-        // Route via backend callback endpoint to centralize URL generation and
-        // avoid provider-specific redirect parameter parsing differences.
-        loginUrl = '/iiflcapital/callback'
-        break
-
-      case 'dhan':
-        loginUrl = '/dhan/initiate-oauth'
-        break
-
-      case 'compositedge':
-        loginUrl = `https://xts.compositedge.com/interactive/thirdparty?appKey=${broker_api_key}&returnURL=${redirect_url}`
-        break
-
-      case 'flattrade': {
-        const flattradeApiKey = getFlattradeApiKey(broker_api_key)
-        loginUrl = `https://auth.flattrade.in/?app_key=${flattradeApiKey}`
-        break
-      }
-
-      case 'fyers':
-        loginUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${broker_api_key}&redirect_uri=${redirect_url}&response_type=code&state=2e9b44629ebb28226224d09db3ffb47c`
-        break
-
-      case 'upstox':
-        loginUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${broker_api_key}&redirect_uri=${redirect_url}`
-        break
-
-      case 'zerodha':
-        loginUrl = `https://kite.trade/connect/login?api_key=${broker_api_key}`
-        break
-
-      case 'arrow':
-        // Arrow hosted login; redirects back to /arrow/callback with request-token.
-        loginUrl = `https://app.arrow.trade/app/login?appID=${broker_api_key}`
-        break
-
-      case 'hdfcsecurities':
-        // HDFC Securities InvestRight hosted login (credentials + 2FA +
-        // consent); redirects back to the app's registered callback with a
-        // request token.
-        loginUrl = `https://developer.hdfcsec.com/oapi/v1/login?api_key=${broker_api_key}`
-        break
-
-      case 'hdfcsky':
-        // HDFC Sky hosted login (credentials + 2FA + consent); redirects back
-        // to the app's registered callback with a request token.
-        loginUrl = `https://developer.hdfcsky.com/oapi/v1/login?api_key=${broker_api_key}`
-        break
-
-      case 'paytm':
-        loginUrl = `https://login.paytmmoney.com/merchant-login?apiKey=${broker_api_key}&state={default}`
-        break
-
-      case 'pocketful': {
-        const state = generateRandomState()
-        localStorage.setItem('pocketful_oauth_state', state)
-        const scope = 'orders holdings'
-        loginUrl = `https://trade.pocketful.in/oauth2/auth?client_id=${broker_api_key}&redirect_uri=${redirect_url}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`
-        break
-      }
-
-      default:
-        setError('Please select a broker')
+    try {
+      if (!apiKey.trim() || !apiSecret.trim()) {
+        setError('Please enter your AC Agarwal Interactive App Key and Secret Key.')
         setIsSubmitting(false)
         return
-    }
+      }
 
-    // Use setTimeout to ensure state updates complete before navigation
-    setTimeout(() => {
-      window.location.href = loginUrl
-    }, 100)
+      const payload = {
+        broker_name: 'acagarwal',
+        client_id: clientId.trim(),
+        broker_api_key: apiKey.trim(),
+        broker_api_secret: apiSecret.trim(),
+        broker_api_key_market: (apiKeyMarket || apiKey).trim(),
+        broker_api_secret_market: (apiSecretMarket || apiSecret).trim(),
+      }
+
+      const res = await webClient.post('/api/broker/direct-connect', payload)
+      if (res.data?.status === 'success') {
+        useAuthStore.setState((state) => ({
+          user: state.user ? { ...state.user, broker: 'acagarwal' } : null,
+        }))
+        window.location.href = res.data.redirect || '/dashboard'
+        return
+      } else {
+        throw new Error(res.data?.message || 'Authentication failed')
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err.message || 'Failed to authenticate with AC Agarwal Symphony XTS')
+      setIsSubmitting(false)
+    }
   }
 
   if (isLoading) {
@@ -242,105 +89,198 @@ export default function BrokerSelect() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-8 px-4">
-      <div className="container max-w-6xl">
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-16">
-          {/* Right side broker form - Shown first on mobile */}
-          <Card className="w-full max-w-md shadow-xl order-1 lg:order-2">
-            <CardHeader className="text-center">
-              <div className="flex justify-center mb-4">
-                <img src="/logo.png" alt="OpenAlgo" className="h-20 w-20" />
+    <div className="min-h-screen flex items-center justify-center py-8 px-4 bg-muted/20">
+      <div className="container max-w-5xl">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          
+          {/* Left side: Info & Features */}
+          <div className="lg:col-span-5 space-y-6">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold mb-3">
+                <Zap className="h-3.5 w-3.5" />
+                <span>AlgoRivarV2 • AC Agarwal Dedicated</span>
               </div>
-              <CardTitle className="text-2xl">Connect Your Trading Account</CardTitle>
-              <CardDescription>
-                Welcome, <span className="font-medium">{user?.username}</span>!
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {error && (
-                <Alert variant="destructive" className="mb-4">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                Connect Trading Account
+              </h1>
+              <p className="text-muted-foreground mt-2 text-sm">
+                Welcome, <span className="font-semibold text-foreground">{user?.username}</span>! Connect your AC Agarwal Symphony XTS account to start automated algorithmic trading.
+              </p>
+            </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="broker-select" className="block text-center">
-                    Login with your Broker
-                  </Label>
-                  <Select
-                    value={selectedBroker}
-                    onValueChange={setSelectedBroker}
-                    disabled={isSubmitting}
-                  >
-                    <SelectTrigger id="broker-select" className="w-full">
-                      <SelectValue placeholder="Select a Broker" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allBrokers
-                        .filter((broker) => broker.id === brokerConfig?.broker_name)
-                        .map((broker) => (
-                          <SelectItem key={broker.id} value={broker.id}>
-                            {broker.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 rounded-lg border bg-card/60">
+                <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-xs font-semibold">Symphony XTS Execution</h3>
+                  <p className="text-xs text-muted-foreground">Ultra-low latency direct exchange order routing for NSE, BSE, NFO, and MCX.</p>
                 </div>
+              </div>
 
-                {(selectedBroker === 'zerodha' || selectedBroker === 'dhan') && (
-                  <Alert className="border-amber-500/50 bg-amber-500/10">
-                    <Info className="h-4 w-4 text-amber-500" />
-                    <AlertDescription className="text-amber-700 dark:text-amber-400">
-                      {selectedBroker === 'zerodha'
-                        ? 'Zerodha requires an active Kite Connect data subscription for market data access.'
-                        : 'Dhan requires an active Data API subscription for market data access.'}
-                    </AlertDescription>
+              <div className="flex items-start gap-3 p-3 rounded-lg border bg-card/60">
+                <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-xs font-semibold">18 Options & Analysis Tools</h3>
+                  <p className="text-xs text-muted-foreground">Live Option Chain, Straddle/Strangle charts, Vol Surface, GEX, and Arbitrage scanners.</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-lg border bg-card/60">
+                <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-xs font-semibold">Strategy Engine & Scalping</h3>
+                  <p className="text-xs text-muted-foreground">Visual Flow Builder, Python Strategy Host, and 1-click Scalping Terminal.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-500" />
+              <span>Credentials are encrypted & stored securely on your server.</span>
+            </div>
+          </div>
+
+          {/* Right side: AC Agarwal Credentials Form */}
+          <div className="lg:col-span-7">
+            <Card className="shadow-2xl border-primary/20">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                      AC
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg font-bold">AC Agarwal (Symphony XTS)</CardTitle>
+                      <CardDescription className="text-xs">Enter your API credentials from the AC Agarwal portal</CardDescription>
+                    </div>
+                  </div>
+                  <a
+                    href="https://symphony.acagarwal.com:3000"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary flex items-center gap-1 hover:underline"
+                  >
+                    Portal <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </CardHeader>
+
+              <CardContent>
+                {error && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertDescription className="text-xs">{error}</AlertDescription>
                   </Alert>
                 )}
 
-                <Button type="submit" className="w-full" disabled={!selectedBroker || isSubmitting}>
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      Connect Account
-                    </>
-                  )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="clientId" className="text-xs font-semibold">
+                      Client ID / UCC Code
+                    </Label>
+                    <Input
+                      id="clientId"
+                      placeholder="e.g. DM933 or your Account ID"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      className="font-mono text-sm"
+                      disabled={isSubmitting}
+                      required
+                    />
+                  </div>
 
-          {/* Left side content - Shown second on mobile */}
-          <div className="flex-1 max-w-xl text-center lg:text-left order-2 lg:order-1">
-            <h1 className="text-4xl lg:text-5xl font-bold mb-6">
-              Connect Your <span className="text-primary">Broker</span>
-            </h1>
-            <p className="text-lg lg:text-xl mb-8 text-muted-foreground">
-              Link your trading account to start executing trades through OpenAlgo's algorithmic
-              trading platform.
-            </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="apiKey" className="text-xs font-semibold">
+                      Interactive App Key (Trading)
+                    </Label>
+                    <Input
+                      id="apiKey"
+                      placeholder="Enter your Interactive App Key"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="font-mono text-sm"
+                      disabled={isSubmitting}
+                      required
+                    />
+                  </div>
 
-            <Alert className="mb-6">
-              <BookOpen className="h-4 w-4" />
-              <AlertTitle>Need Help?</AlertTitle>
-              <AlertDescription>Check our documentation for broker setup guides.</AlertDescription>
-            </Alert>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="apiSecret" className="text-xs font-semibold">
+                        Interactive Secret Key
+                      </Label>
+                      <span className="text-[10px] text-muted-foreground">Symphony XTS password</span>
+                    </div>
+                    <Input
+                      id="apiSecret"
+                      type="password"
+                      placeholder="Enter your Interactive Secret Key"
+                      value={apiSecret}
+                      onChange={(e) => setApiSecret(e.target.value)}
+                      className="font-mono text-sm"
+                      disabled={isSubmitting}
+                      required
+                    />
+                  </div>
 
-            <div className="flex justify-center lg:justify-start gap-4">
-              <Button variant="outline" asChild>
-                <a href="https://docs.openalgo.in" target="_blank" rel="noopener noreferrer">
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  Documentation
-                </a>
-              </Button>
-            </div>
+                  {/* Market Data Keys Collapsible */}
+                  <div className="pt-2 border-t border-border">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground hover:text-foreground p-0 h-auto font-normal flex items-center gap-1.5"
+                      onClick={() => setShowMarketKeys(!showMarketKeys)}
+                    >
+                      <Key className="h-3.5 w-3.5" />
+                      <span>{showMarketKeys ? 'Hide Market Data Keys' : 'Configure Separate Market Data Keys (Optional)'}</span>
+                    </Button>
+
+                    {showMarketKeys && (
+                      <div className="space-y-3 pt-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Market Data App Key</Label>
+                          <Input
+                            placeholder="Optional: Defaults to Interactive Key"
+                            value={apiKeyMarket}
+                            onChange={(e) => setApiKeyMarket(e.target.value)}
+                            className="font-mono text-xs"
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Market Data Secret Key</Label>
+                          <Input
+                            type="password"
+                            placeholder="Optional: Defaults to Interactive Secret"
+                            value={apiSecretMarket}
+                            onChange={(e) => setApiSecretMarket(e.target.value)}
+                            className="font-mono text-xs"
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    type="submit"
+                    className="w-full font-semibold"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Connecting AC Agarwal...
+                      </>
+                    ) : (
+                      'Connect AC Agarwal & Launch AlgoRivar'
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
           </div>
+
         </div>
       </div>
     </div>

@@ -22,7 +22,11 @@ def load_broker_capabilities(broker_directory="broker"):
     """
     global _broker_capabilities
 
-    broker_path = os.path.join(current_app.root_path, broker_directory)
+    try:
+        root_path = current_app.root_path
+    except Exception:
+        root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    broker_path = os.path.join(root_path, broker_directory)
     capabilities = {}
 
     for broker_name in os.listdir(broker_path):

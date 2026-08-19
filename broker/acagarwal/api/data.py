@@ -40,25 +40,66 @@ class BrokerData:
         try:
             client = get_httpx_client()
             token = get_token(symbol, exchange)
-            brexchange = get_brexchange(symbol, exchange)
 
-            url = f"{MARKET_DATA_URL}/instruments/quotes"
+            if not token:
+                return {"status": "error", "message": f"Token not found for {symbol}:{exchange}"}
+
             payload = {
                 "instruments": [
                     {
                         "exchangeSegment": map_exchange_code(exchange),
-                        "exchangeInstrumentID": token,
+                        "exchangeInstrumentID": int(token) if str(token).isdigit() else token,
                     }
                 ],
                 "xtsMessageCode": 1502,
                 "publishFormat": "JSON",
             }
 
-            response = client.post(url, json=payload, headers=self._get_headers())
-            if response.status_code == 200:
-                data = response.json()
-                return data
-            return {"status": "error", "message": f"HTTP {response.status_code}"}
+            candidate_urls = [
+                f"{MARKET_DATA_URL}/instruments/quotes",
+                f"{BASE_URL}/marketdata/instruments/quotes",
+                f"{BASE_URL}/apimarketdata/instruments/quotes",
+            ]
+
+            headers = self._get_headers()
+            for u in candidate_urls:
+                try:
+                    response = client.post(u, json=payload, headers=headers, timeout=5.0)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("type") == "success":
+                            result = data.get("result", {})
+                            quotes_list = result.get("quotesList", [])
+                            if quotes_list:
+                                item = quotes_list[0]
+                                if isinstance(item, str):
+                                    try:
+                                        item = json.loads(item)
+                                    except Exception:
+                                        item = {}
+                                touchline = item.get("Touchline", {})
+                                ltp = float(touchline.get("LastTradedPrice", 0.0))
+                                open_p = float(touchline.get("Open", 0.0))
+                                high_p = float(touchline.get("High", 0.0))
+                                low_p = float(touchline.get("Low", 0.0))
+                                close_p = float(touchline.get("Close", 0.0))
+                                vol = int(touchline.get("TotalQtyTraded", 0))
+                                return {
+                                    "symbol": symbol,
+                                    "exchange": exchange,
+                                    "ltp": ltp,
+                                    "open": open_p,
+                                    "high": high_p,
+                                    "low": low_p,
+                                    "close": close_p,
+                                    "volume": vol,
+                                    "raw": data,
+                                }
+                        return data
+                except Exception as e:
+                    logger.debug(f"[AC Agarwal] Quote candidate {u} failed: {e}")
+
+            return {"status": "error", "message": "Failed to fetch quotes from AC Agarwal"}
         except Exception as e:
             logger.error(f"[AC Agarwal] Error fetching quotes: {e}")
             return {"status": "error", "message": str(e)}

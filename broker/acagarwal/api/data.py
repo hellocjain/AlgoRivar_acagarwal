@@ -78,7 +78,11 @@ class BrokerData:
                         data = response.json()
                         if data.get("type") == "success":
                             result = data.get("result", {})
-                            quotes_list = result.get("quotesList", []) or result.get("quotes", [])
+                            quotes_list = (
+                                result.get("listQuotes", [])
+                                or result.get("quotesList", [])
+                                or result.get("quotes", [])
+                            )
                             if quotes_list:
                                 item = quotes_list[0]
                                 if isinstance(item, str):

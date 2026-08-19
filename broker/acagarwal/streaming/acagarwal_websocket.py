@@ -321,6 +321,20 @@ class ACAgarwalWebSocketClient:
                         if res.status_code == 200:
                             logger.info(f"[AC Agarwal WS] Subscribed code {code} successfully at: {u}")
                             success = True
+                            # Process initial quote data from listQuotes if returned by XTS
+                            try:
+                                res_json = res.json()
+                                if res_json.get("type") == "success" and "result" in res_json:
+                                    list_quotes = res_json["result"].get("listQuotes", [])
+                                    for quote_str in list_quotes:
+                                        try:
+                                            quote_data = json.loads(quote_str) if isinstance(quote_str, str) else quote_str
+                                            if self.on_tick_callback and isinstance(quote_data, dict):
+                                                self.on_tick_callback(quote_data)
+                                        except Exception as parse_err:
+                                            logger.debug(f"[AC Agarwal WS] Initial quote parse error: {parse_err}")
+                            except Exception:
+                                pass
                             break
                     except Exception as e:
                         logger.debug(f"[AC Agarwal WS] Subscription attempt for code {code} at {u} failed: {e}")

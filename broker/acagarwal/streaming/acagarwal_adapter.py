@@ -93,10 +93,26 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             }]
 
             self.logger.info(f"[AC Agarwal WS] Subscribing {exchange}:{symbol} (token={token}, seg={exch_code}) mode={mode}")
+            success = False
             if self.ws_client:
                 success = self.ws_client.subscribe(instruments, mode=mode)
-                return {"status": "success" if success else "error"}
-            return {"status": "error", "message": "WebSocket client not initialized"}
+
+            # Push initial quote snapshot immediately so chart gets latest price instantly
+            try:
+                from broker.acagarwal.api.data import BrokerData
+                data_api = BrokerData(feed_token=self.feed_token)
+                quote = data_api.get_quotes(symbol, exchange)
+                if quote and isinstance(quote, dict) and quote.get("ltp"):
+                    parsed_snap = self.transform_to_openalgo_format(quote)
+                    if parsed_snap and parsed_snap.get("symbol"):
+                        self.logger.info(f"[AC Agarwal WS] Pushed initial snapshot for {exchange}:{symbol} -> LTP: {parsed_snap.get('ltp')}")
+                        self.publish_market_data(f"{exchange}_{symbol}_LTP", parsed_snap)
+                        self.publish_market_data(f"{exchange}_{symbol}_QUOTE", parsed_snap)
+                        self.publish_market_data(f"{exchange}_{symbol}_DEPTH", parsed_snap)
+            except Exception as snap_err:
+                self.logger.debug(f"[AC Agarwal WS] Initial quote snapshot fetch skipped: {snap_err}")
+
+            return {"status": "success" if success else "error"}
         except Exception as e:
             self.logger.error(f"[AC Agarwal WS] Subscribe error: {e}")
             return {"status": "error", "message": str(e)}
@@ -265,17 +281,20 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                         q = _to_int(a.get("Size") or a.get("quantity") or a.get("Qty"))
                         sell_depth.append({"price": p, "quantity": q})
 
+            import time as _time
             result_dict = {
                 "type": "quote",
                 "symbol": symbol,
                 "token": token,
                 "exchange": exchange,
                 "ltp": ltp,
+                "last_price": ltp,
                 "open": open_p,
                 "high": high_p,
                 "low": low_p,
                 "close": close_p,
                 "volume": vol,
+                "timestamp": int(_time.time()),
                 "raw": raw_data,
             }
 
@@ -284,6 +303,8 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                     "buy": buy_depth,
                     "sell": sell_depth,
                 }
+                result_dict["bids"] = buy_depth
+                result_dict["asks"] = sell_depth
 
             return result_dict
         except Exception as e:

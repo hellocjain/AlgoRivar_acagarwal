@@ -100,7 +100,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             # Push initial quote snapshot immediately so chart gets latest price instantly
             try:
                 from broker.acagarwal.api.data import BrokerData
-                data_api = BrokerData(feed_token=self.feed_token)
+                data_api = BrokerData(auth_token=self.auth_token, feed_token=self.feed_token)
                 quote = data_api.get_quotes(symbol, exchange)
                 if quote and isinstance(quote, dict) and quote.get("ltp"):
                     parsed_snap = self.transform_to_openalgo_format(quote)
@@ -110,7 +110,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                         self.publish_market_data(f"{exchange}_{symbol}_QUOTE", parsed_snap)
                         self.publish_market_data(f"{exchange}_{symbol}_DEPTH", parsed_snap)
             except Exception as snap_err:
-                self.logger.debug(f"[AC Agarwal WS] Initial quote snapshot fetch skipped: {snap_err}")
+                self.logger.warning(f"[AC Agarwal WS] Initial quote snapshot fetch failed: {snap_err}")
 
             return {"status": "success" if success else "error"}
         except Exception as e:

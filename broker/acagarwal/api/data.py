@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 class BrokerData:
-    def __init__(self, auth_token, feed_token=None, user_id=None):
+    def __init__(self, auth_token=None, feed_token=None, user_id=None):
         self.auth_token = auth_token
         self.feed_token = feed_token
         self.user_id = user_id

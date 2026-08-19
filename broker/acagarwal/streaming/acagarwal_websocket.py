@@ -254,6 +254,12 @@ class ACAgarwalWebSocketClient:
                     else:
                         return
 
+                if isinstance(data, dict) and str(data.get("code", "")).startswith("s-socket"):
+                    logger.info(f"[AC Agarwal WS] Control handshake: {data.get('description')}")
+                    return
+
+                logger.info(f"[AC Agarwal WS] Event '{event}' payload: {data}")
+
                 if "1105" in str(event) or "order" in str(event).lower():
                     if self.on_order_update_callback:
                         self.on_order_update_callback(data)

@@ -57,6 +57,8 @@ if [ "$(id -u)" -eq 0 ]; then
   done
   apt-get update -qq -y > /dev/null 2>&1 || true
   apt-get install -qq -y curl git libevent-dev sqlite3 > /dev/null 2>&1 || true
+  ufw allow 5000/tcp > /dev/null 2>&1 || true
+  ufw allow 8765/tcp > /dev/null 2>&1 || true
 fi
 
 echo -e "

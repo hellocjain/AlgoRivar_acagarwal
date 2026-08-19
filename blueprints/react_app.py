@@ -734,39 +734,49 @@ def react_flow_shortcuts():
 # ============================================================
 
 
+_MIME_TYPES = {
+    ".js": "application/javascript; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+}
+
+
 @react_bp.route("/assets/<path:filename>")
 def serve_assets(filename):
-    """Serve static assets with long cache headers.
-
-    Negotiates pre-compressed variants: if the client advertises ``br``/``gzip``
-    and a ``<filename>.br``/``.gz`` exists, serve that with the matching
-    ``Content-Encoding`` and the original file's ``Content-Type``. Otherwise
-    fall back to the raw asset (i.e. worst case == previous behavior). All paths
-    go through ``send_from_directory`` so traversal protection is preserved.
-    """
+    """Serve static assets with long cache headers and explicit MIME types."""
     assets_dir = FRONTEND_DIST / "assets"
     if not assets_dir.exists():
         return "Assets not found", 404
+
+    # Determine explicit content type
+    ext_key = Path(filename).suffix.lower()
+    content_type = _MIME_TYPES.get(ext_key) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
     accept_encoding = request.headers.get("Accept-Encoding", "")
     response = None
     for ext, encoding in _PRECOMPRESSED_ENCODINGS:
         if encoding in accept_encoding and (assets_dir / (filename + ext)).is_file():
-            response = send_from_directory(assets_dir, filename + ext)
+            response = send_from_directory(assets_dir, filename + ext, mimetype=content_type)
             response.headers["Content-Encoding"] = encoding
-            # Type must reflect the ORIGINAL asset, not the .br/.gz wrapper.
-            content_type = mimetypes.guess_type(filename)[0]
-            if content_type:
-                response.headers["Content-Type"] = content_type
-            # Caches must key on encoding so a br copy is never sent to a
-            # client that only speaks gzip (or none).
+            response.headers["Content-Type"] = content_type
             response.headers["Vary"] = "Accept-Encoding"
             break
     if response is None:
-        response = send_from_directory(assets_dir, filename)
+        if not (assets_dir / filename).is_file():
+            return f"Asset not found: {filename}", 404
+        response = send_from_directory(assets_dir, filename, mimetype=content_type)
+        response.headers["Content-Type"] = content_type
 
-    # Cache assets for 1 year — safe because filenames are content-hashed, so a
-    # new build produces new URLs and users never need to clear their cache.
+    # Cache assets for 1 year — safe because filenames are content-hashed
     response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 

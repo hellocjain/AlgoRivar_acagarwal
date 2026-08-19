@@ -591,6 +591,9 @@ def create_app():
         if not is_authenticated and not path.startswith(safe_prefixes):
             Error404Tracker.track_404(client_ip, path)
 
+        if path.startswith(("/assets/", "/api/", "/socket.io/")):
+            return f"Resource not found: {path}", 404
+
         # Serve React app (React Router handles 404)
         return serve_react_app()
 

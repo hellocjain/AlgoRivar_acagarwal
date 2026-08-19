@@ -27,6 +27,8 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
         self.logger = logging.getLogger("acagarwal_websocket")
         self.ws_client = None
         self.user_id = None
+        self.auth_token = None
+        self.feed_token = None
         self.broker_name = "acagarwal"
         self.reconnect_delay = 5
         self.max_reconnect_delay = 60
@@ -43,14 +45,19 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
         self.broker_name = broker_name
 
         if not auth_data:
-            auth_token = get_auth_token(user_id, bypass_cache=True)
-            feed_token = get_feed_token(user_id)
+            self.auth_token = get_auth_token(user_id, bypass_cache=True)
+            self.feed_token = get_feed_token(user_id)
 
             api_key = os.getenv("BROKER_API_KEY_MARKET") or os.getenv("BROKER_API_KEY")
             api_secret = os.getenv("BROKER_API_SECRET_MARKET") or os.getenv("BROKER_API_SECRET")
 
             if not api_key or not api_secret:
                 raise ValueError("Missing AC Agarwal API credentials in environment variables")
+        else:
+            self.auth_token = auth_data.get("auth_token")
+            self.feed_token = auth_data.get("feed_token")
+            api_key = auth_data.get("api_key") or os.getenv("BROKER_API_KEY_MARKET") or os.getenv("BROKER_API_KEY")
+            api_secret = auth_data.get("api_secret") or os.getenv("BROKER_API_SECRET_MARKET") or os.getenv("BROKER_API_SECRET")
 
         self.ws_client = ACAgarwalWebSocketClient(
             api_key=api_key,
@@ -100,7 +107,9 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             # Push initial quote snapshot immediately so chart gets latest price instantly
             try:
                 from broker.acagarwal.api.data import BrokerData
-                data_api = BrokerData(auth_token=self.auth_token, feed_token=self.feed_token)
+                feed_tok = getattr(self, "feed_token", None) or (self.ws_client.token if self.ws_client else None)
+                auth_tok = getattr(self, "auth_token", None)
+                data_api = BrokerData(auth_token=auth_tok, feed_token=feed_tok)
                 quote = data_api.get_quotes(symbol, exchange)
                 if quote and isinstance(quote, dict) and quote.get("ltp"):
                     parsed_snap = self.transform_to_openalgo_format(quote)

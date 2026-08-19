@@ -34,6 +34,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
         self.max_reconnect_attempts = 10
         self.running = False
         self.lock = threading.Lock()
+        self._last_prices = {}
 
     def initialize(
         self, broker_name: str, user_id: str, auth_data: dict[str, str] | None = None
@@ -193,19 +194,30 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             exchange = ACAgarwalExchangeMapper.get_openalgo_exchange(exch_code)
             symbol = get_symbol(token, exchange) or token
 
-            ltp = _to_float(
+            last = self._last_prices.get(token, {})
+
+            raw_ltp = _to_float(
                 touchline.get("LastTradedPrice")
                 or touchline.get("lastTradedPrice")
                 or touchline.get("LTP")
                 or touchline.get("ltp")
                 or raw_data.get("LastTradedPrice")
                 or raw_data.get("LTP")
-                or 0.0
             )
-            open_p = _to_float(touchline.get("Open") or touchline.get("open") or raw_data.get("Open"))
-            high_p = _to_float(touchline.get("High") or touchline.get("high") or raw_data.get("High"))
-            low_p = _to_float(touchline.get("Low") or touchline.get("low") or raw_data.get("Low"))
-            close_p = _to_float(touchline.get("Close") or touchline.get("close") or raw_data.get("Close"))
+            ltp = raw_ltp if raw_ltp > 0 else last.get("ltp", 0.0)
+
+            raw_open = _to_float(touchline.get("Open") or touchline.get("open") or raw_data.get("Open"))
+            open_p = raw_open if raw_open > 0 else last.get("open", ltp)
+
+            raw_high = _to_float(touchline.get("High") or touchline.get("high") or raw_data.get("High"))
+            high_p = raw_high if raw_high > 0 else last.get("high", ltp)
+
+            raw_low = _to_float(touchline.get("Low") or touchline.get("low") or raw_data.get("Low"))
+            low_p = raw_low if raw_low > 0 else last.get("low", ltp)
+
+            raw_close = _to_float(touchline.get("Close") or touchline.get("close") or raw_data.get("Close"))
+            close_p = raw_close if raw_close > 0 else last.get("close", ltp)
+
             vol = _to_int(
                 touchline.get("TotalQtyTraded")
                 or touchline.get("totalQtyTraded")
@@ -213,6 +225,18 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 or touchline.get("volume")
                 or raw_data.get("TotalQtyTraded")
             )
+            if vol == 0:
+                vol = last.get("volume", 0)
+
+            if ltp > 0:
+                self._last_prices[token] = {
+                    "ltp": ltp,
+                    "open": open_p,
+                    "high": high_p,
+                    "low": low_p,
+                    "close": close_p,
+                    "volume": vol,
+                }
 
             # Extract depth book if present in Symphony XTS payload
             bids_raw = raw_data.get("Bids") or raw_data.get("bids") or raw_data.get("Buy") or touchline.get("Bids") or []

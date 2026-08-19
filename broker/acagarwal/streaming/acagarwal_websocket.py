@@ -228,6 +228,51 @@ class ACAgarwalWebSocketClient:
             except Exception as e:
                 logger.error(f"[AC Agarwal WS] Error processing order update: {e}")
 
+        @self.sio.on("*")
+        def catch_all(event, data=None, *args):
+            try:
+                if event in ("connect", "disconnect"):
+                    return
+                if not data and args:
+                    data = args[0]
+                if not data:
+                    return
+
+                if isinstance(data, bytes):
+                    try:
+                        data = data.decode("utf-8")
+                    except Exception:
+                        pass
+
+                if isinstance(data, str):
+                    s = data.strip()
+                    if s.startswith("{") or s.startswith("["):
+                        try:
+                            data = json.loads(s)
+                        except Exception:
+                            return
+                    else:
+                        return
+
+                if "1105" in str(event) or "order" in str(event).lower():
+                    if self.on_order_update_callback:
+                        self.on_order_update_callback(data)
+                else:
+                    if isinstance(data, dict):
+                        if self.on_tick_callback:
+                            self.on_tick_callback(data)
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, str) and (item.strip().startswith("{") or item.strip().startswith("[")):
+                                try:
+                                    item = json.loads(item.strip())
+                                except Exception:
+                                    continue
+                            if isinstance(item, dict) and self.on_tick_callback:
+                                self.on_tick_callback(item)
+            except Exception as e:
+                logger.error(f"[AC Agarwal WS] Error in catch-all event '{event}': {e}")
+
     def subscribe(self, instruments: List[Dict[str, Any]], mode: int = 2) -> bool:
         if not self.connected or not self.token:
             logger.error("[AC Agarwal WS] Cannot subscribe - client disconnected")

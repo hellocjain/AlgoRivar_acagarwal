@@ -192,25 +192,34 @@ class ACAgarwalWebSocketClient:
                 f"{BASE_URL}/apimarketdata/instruments/subscription",
             ]
 
-            payload = {
-                "instruments": instruments,
-                "xtsMessageCode": 1502 if mode == 2 else (1505 if mode == 3 else 1501),
-            }
             headers = {
                 "authorization": self.token,
                 "Content-Type": "application/json",
             }
 
-            for u in candidate_urls:
-                try:
-                    res = requests.post(u, json=payload, headers=headers, timeout=5)
-                    if res.status_code == 200:
-                        logger.info(f"[AC Agarwal WS] Subscribed successfully at: {u}")
-                        return True
-                except Exception as e:
-                    logger.debug(f"[AC Agarwal WS] Subscription attempt at {u} failed: {e}")
+            codes = [1502]
+            if mode == 3:
+                codes = [1502, 1505, 1501]
+            elif mode == 1:
+                codes = [1502, 1501]
 
-            return False
+            success = False
+            for code in codes:
+                payload = {
+                    "instruments": instruments,
+                    "xtsMessageCode": code,
+                }
+                for u in candidate_urls:
+                    try:
+                        res = requests.post(u, json=payload, headers=headers, timeout=5)
+                        if res.status_code == 200:
+                            logger.info(f"[AC Agarwal WS] Subscribed code {code} successfully at: {u}")
+                            success = True
+                            break
+                    except Exception as e:
+                        logger.debug(f"[AC Agarwal WS] Subscription attempt for code {code} at {u} failed: {e}")
+
+            return success
         except Exception as e:
             logger.error(f"[AC Agarwal WS] Subscription exception: {e}")
             return False

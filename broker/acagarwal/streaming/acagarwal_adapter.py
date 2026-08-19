@@ -189,7 +189,27 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 or 0
             )
 
-            return {
+            # Extract depth book if present in Symphony XTS payload
+            bids_raw = raw_data.get("Bids") or raw_data.get("bids") or raw_data.get("Buy") or touchline.get("Bids") or []
+            asks_raw = raw_data.get("Asks") or raw_data.get("asks") or raw_data.get("Sell") or touchline.get("Asks") or []
+
+            buy_depth = []
+            if isinstance(bids_raw, list):
+                for b in bids_raw:
+                    if isinstance(b, dict):
+                        p = float(b.get("Price") or b.get("price") or b.get("Rate") or 0.0)
+                        q = int(b.get("Size") or b.get("quantity") or b.get("Qty") or 0)
+                        buy_depth.append({"price": p, "quantity": q})
+
+            sell_depth = []
+            if isinstance(asks_raw, list):
+                for a in asks_raw:
+                    if isinstance(a, dict):
+                        p = float(a.get("Price") or a.get("price") or a.get("Rate") or 0.0)
+                        q = int(a.get("Size") or a.get("quantity") or a.get("Qty") or 0)
+                        sell_depth.append({"price": p, "quantity": q})
+
+            result_dict = {
                 "type": "quote",
                 "symbol": symbol,
                 "token": token,
@@ -202,6 +222,14 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 "volume": vol,
                 "raw": raw_data,
             }
+
+            if buy_depth or sell_depth:
+                result_dict["depth"] = {
+                    "buy": buy_depth,
+                    "sell": sell_depth,
+                }
+
+            return result_dict
         except Exception as e:
             self.logger.error(f"[AC Agarwal WS] Error transforming data: {e}")
             return {}

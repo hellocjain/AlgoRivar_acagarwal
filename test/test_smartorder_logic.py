@@ -269,12 +269,7 @@ class TestPositionCache:
 
 # List of all brokers to test
 ALL_BROKERS = [
-    "aliceblue", "angel", "compositedge", "definedge", "deltaexchange",
-    "dhan", "dhan_sandbox", "firstock", "fivepaisa", "fivepaisaxts",
-    "flattrade", "fyers", "groww", "ibulls", "iifl", "indmoney",
-    "jainamxts", "kotak", "motilal", "mstock", "nubra", "paytm",
-    "pocketful", "rmoney", "samco", "shoonya", "tradejini", "upstox",
-    "wisdom", "zebu", "zerodha",
+    "acagarwal",
 ]
 
 

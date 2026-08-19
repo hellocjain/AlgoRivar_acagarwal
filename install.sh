@@ -170,6 +170,15 @@ else
   echo -e "${GREEN}[+] Existing .env file detected. Retaining current configuration.${NC}"
 fi
 
+# Auto-download master contracts if database table is empty
+echo -e "${GREEN}[+] Syncing AC Agarwal Master Contracts in background...${NC}"
+"$UV_BIN" run python -c "
+from database.token_db import get_token
+if not get_token('RELIANCE', 'NSE'):
+    from broker.acagarwal.database.master_contract_db import master_contract_download
+    master_contract_download()
+" > /dev/null 2>&1 &
+
 echo -e "
 ${CYAN}[5/5] Configuring systemd background auto-start service...${NC}"
 if [ "$(id -u)" -eq 0 ]; then

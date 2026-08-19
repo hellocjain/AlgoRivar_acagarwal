@@ -401,6 +401,10 @@ export class TradingTerminal {
   private lsSet(key: string, val: string): void {
     localStorage.setItem(`${this.sk}-${key}`, val)
   }
+  private lsDel(key: string): void {
+    localStorage.removeItem(`${this.sk}-${key}`)
+    if (this.sk.endsWith('-p0')) localStorage.removeItem(`-${key}`)
+  }
 
   /* ── tick-size / formatting bound to the loaded instrument ────────────── */
   private refPrice(): number {
@@ -1998,7 +2002,7 @@ export class TradingTerminal {
     if (this.bookTimer) clearInterval(this.bookTimer)
     this.bookTimer = setInterval(() => this.pollBook(), 8000)
 
-    // restore the last symbol; fall back to BHEL/NSE if it's gone or has no data.
+    // restore the last symbol; fall back to RELIANCE/NSE or BHEL/NSE if it's gone or has no data.
     let loaded = false
     try {
       const saved = JSON.parse(this.lsGet('symbol') || 'null') as {
@@ -2007,17 +2011,34 @@ export class TradingTerminal {
       } | null
       if (saved?.symbol) {
         const rows = await this.search(saved.symbol, saved.exchange)
-        const row = rows.find((r) => r.symbol === saved.symbol && r.exchange === saved.exchange)
-        if (row) loaded = await this.loadSymbol(row, { silent: true })
+        const row = rows.find((r) => r.symbol === saved.symbol && (!saved.exchange || r.exchange === saved.exchange))
+        if (row) {
+          loaded = await this.loadSymbol(row, { silent: true })
+        }
       }
     } catch {
       /* fall through to the default */
     }
     if (!loaded && !this.destroyed) {
+      this.lsDel('symbol')
       try {
-        const rows = await this.search('BHEL', 'NSE')
-        const bhel = rows.find((r) => r.symbol === 'BHEL' && r.exchange === 'NSE')
-        if (bhel) await this.loadSymbol(bhel)
+        const defaultCandidates = [
+          { symbol: 'RELIANCE', exchange: 'NSE' },
+          { symbol: 'BHEL', exchange: 'NSE' },
+          { symbol: 'INFY', exchange: 'NSE' },
+          { symbol: 'TCS', exchange: 'NSE' },
+        ]
+        for (const candidate of defaultCandidates) {
+          const rows = await this.search(candidate.symbol, candidate.exchange)
+          const row = rows.find((r) => r.symbol === candidate.symbol && r.exchange === candidate.exchange)
+          if (row) {
+            const ok = await this.loadSymbol(row, { silent: true })
+            if (ok) {
+              loaded = true
+              break
+            }
+          }
+        }
       } catch {
         /* leave the chart empty; the user can search */
       }

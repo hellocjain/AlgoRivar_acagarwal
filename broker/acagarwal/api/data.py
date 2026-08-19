@@ -276,46 +276,57 @@ class BrokerData:
                 }
 
                 chunk_df = None
+                candidate_segments = [exchange_segment, map_exchange_code(exchange), str(map_exchange_code(exchange))]
                 for u in candidate_urls:
-                    try:
-                        response = client.get(u, params=params, headers=headers, timeout=5.0)
-                        if response.status_code == 200:
-                            res = response.json()
-                            if res.get("type") == "success":
-                                result = res.get("result", {})
-                                raw_data = (
-                                    result.get("dataReponse")
-                                    or result.get("dataResponse")
-                                    or result.get("data", "")
-                                )
-                                if isinstance(raw_data, str) and raw_data.strip():
-                                    rows = raw_data.strip().split(",")
-                                    parsed_bars = []
-                                    for row in rows:
-                                        fields = row.split("|")
-                                        if len(fields) >= 6:
-                                            try:
-                                                parsed_bars.append(
-                                                    {
-                                                        "timestamp": int(fields[0]),
-                                                        "open": float(fields[1]),
-                                                        "high": float(fields[2]),
-                                                        "low": float(fields[3]),
-                                                        "close": float(fields[4]),
-                                                        "volume": int(fields[5]),
-                                                        "oi": int(fields[6]) if len(fields) > 6 and str(fields[6]).isdigit() else 0,
-                                                    }
-                                                )
-                                            except (ValueError, IndexError):
-                                                continue
-                                    if parsed_bars:
-                                        chunk_df = pd.DataFrame(parsed_bars)
+                    for seg in candidate_segments:
+                        params = {
+                            "exchangeSegment": seg,
+                            "exchangeInstrumentID": str(token),
+                            "startTime": from_str,
+                            "endTime": to_str,
+                            "compressionValue": compression_value,
+                        }
+                        try:
+                            response = client.get(u, params=params, headers=headers, timeout=5.0)
+                            if response.status_code == 200:
+                                res = response.json()
+                                if res.get("type") == "success":
+                                    result = res.get("result", {})
+                                    raw_data = (
+                                        result.get("dataReponse")
+                                        or result.get("dataResponse")
+                                        or result.get("data", "")
+                                    )
+                                    if isinstance(raw_data, str) and raw_data.strip():
+                                        rows = raw_data.strip().split(",")
+                                        parsed_bars = []
+                                        for row in rows:
+                                            fields = row.split("|")
+                                            if len(fields) >= 6:
+                                                try:
+                                                    parsed_bars.append(
+                                                        {
+                                                            "timestamp": int(fields[0]),
+                                                            "open": float(fields[1]),
+                                                            "high": float(fields[2]),
+                                                            "low": float(fields[3]),
+                                                            "close": float(fields[4]),
+                                                            "volume": int(fields[5]),
+                                                            "oi": int(fields[6]) if len(fields) > 6 and str(fields[6]).isdigit() else 0,
+                                                        }
+                                                    )
+                                                except (ValueError, IndexError):
+                                                    continue
+                                        if parsed_bars:
+                                            chunk_df = pd.DataFrame(parsed_bars)
+                                            break
+                                    elif isinstance(raw_data, list) and len(raw_data) > 0:
+                                        chunk_df = pd.DataFrame(raw_data)
                                         break
-                                elif isinstance(raw_data, list) and len(raw_data) > 0:
-                                    chunk_df = pd.DataFrame(raw_data)
-                                    break
-                    except Exception as e:
-                        logger.debug(f"[AC Agarwal] History candidate {u} failed: {e}")
+                        except Exception as e:
+                            logger.debug(f"[AC Agarwal] History candidate {u} with seg {seg} failed: {e}")
+                    if chunk_df is not None and not chunk_df.empty:
+                        break
 
                 if chunk_df is not None and not chunk_df.empty:
                     dfs.append(chunk_df)

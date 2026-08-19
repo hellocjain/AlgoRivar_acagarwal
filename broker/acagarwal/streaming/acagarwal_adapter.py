@@ -120,7 +120,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
 
     def _handle_tick(self, raw_tick: dict):
         try:
-            self.logger.debug(f"[AC Agarwal WS] Received raw tick: {raw_tick}")
+            self.logger.info(f"[AC Agarwal WS] Received raw tick: {raw_tick}")
             parsed = self.transform_to_openalgo_format(raw_tick)
             if parsed and parsed.get("symbol"):
                 exchange = parsed.get("exchange", "NSE")
@@ -159,6 +159,11 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             if not isinstance(raw_data, dict):
                 return {}
 
+            if "result" in raw_data and isinstance(raw_data["result"], dict):
+                raw_data = raw_data["result"]
+            elif "data" in raw_data and isinstance(raw_data["data"], dict):
+                raw_data = raw_data["data"]
+
             def _to_float(val, default=0.0):
                 if val is None or val == "":
                     return default
@@ -186,6 +191,8 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             token = str(
                 raw_data.get("ExchangeInstrumentID")
                 or raw_data.get("exchangeInstrumentID")
+                or (touchline.get("ExchangeInstrumentID") if isinstance(touchline, dict) else None)
+                or (touchline.get("exchangeInstrumentID") if isinstance(touchline, dict) else None)
                 or raw_data.get("Token")
                 or raw_data.get("token")
                 or ""

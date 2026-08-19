@@ -74,6 +74,8 @@ class ACAgarwalExchangeMapper:
     def get_openalgo_exchange(acagarwal_code):
         return ACAgarwalExchangeMapper.REVERSE_EXCHANGE_TYPES.get(acagarwal_code, "NSE")
 
+    get_xts_exchange = get_exchange_type
+
 
 class ACAgarwalCapabilityRegistry:
     exchanges = ["NSE", "NFO", "CDS", "BSE", "BFO", "MCX"]

@@ -84,10 +84,10 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             if not token:
                 return {"status": "error", "message": f"Token not found for {exchange}:{symbol}"}
 
-            exch_code = ACAgarwalExchangeMapper.get_xts_exchange(exchange)
+            exch_code = ACAgarwalExchangeMapper.get_exchange_type(exchange)
             instruments = [{
                 "exchangeSegment": exch_code,
-                "exchangeInstrumentID": token,
+                "exchangeInstrumentID": int(token) if str(token).isdigit() else token,
             }]
 
             if self.ws_client:
@@ -122,12 +122,15 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 exchange = parsed.get("exchange", "NSE")
                 symbol = parsed.get("symbol")
 
-                # Publish to all standard modes: LTP, QUOTE, DEPTH
-                topic_ltp = f"{self.broker_name}_{exchange}_{symbol}_LTP"
-                topic_quote = f"{self.broker_name}_{exchange}_{symbol}_QUOTE"
+                # Publish to all standard modes for server.py zmq_listener:
+                # Format expected by server.py: {EXCHANGE}_{SYMBOL}_{MODE}
+                topic_ltp = f"{exchange}_{symbol}_LTP"
+                topic_quote = f"{exchange}_{symbol}_QUOTE"
+                topic_depth = f"{exchange}_{symbol}_DEPTH"
 
                 self.publish_market_data(topic_ltp, parsed)
                 self.publish_market_data(topic_quote, parsed)
+                self.publish_market_data(topic_depth, parsed)
         except Exception as e:
             self.logger.error(f"[AC Agarwal WS] Tick handler error: {e}")
 

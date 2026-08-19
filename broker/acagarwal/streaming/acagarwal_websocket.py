@@ -150,11 +150,16 @@ class ACAgarwalWebSocketClient:
                 self.on_disconnect_callback()
 
         @self.sio.on("1501-json-full")
+        @self.sio.on("1501-json-partial")
         @self.sio.on("1502-json-full")
+        @self.sio.on("1502-json-partial")
         @self.sio.on("1505-json-full")
+        @self.sio.on("1505-json-partial")
         @self.sio.on("1507-json-full")
         @self.sio.on("1510-json-full")
         @self.sio.on("1512-json-full")
+        @self.sio.on("touchline")
+        @self.sio.on("ltp")
         def on_market_data(data):
             try:
                 if isinstance(data, str):
@@ -165,6 +170,7 @@ class ACAgarwalWebSocketClient:
                 logger.error(f"[AC Agarwal WS] Error processing tick: {e}")
 
         @self.sio.on("1105-json-full")
+        @self.sio.on("1105-json-partial")
         def on_order_update(data):
             try:
                 if isinstance(data, str):
@@ -180,7 +186,12 @@ class ACAgarwalWebSocketClient:
             return False
 
         try:
-            url = self.API_BASE_URL
+            candidate_urls = [
+                f"{MARKET_DATA_URL}/instruments/subscription",
+                f"{BASE_URL}/marketdata/instruments/subscription",
+                f"{BASE_URL}/apimarketdata/instruments/subscription",
+            ]
+
             payload = {
                 "instruments": instruments,
                 "xtsMessageCode": 1502 if mode == 2 else (1505 if mode == 3 else 1501),
@@ -189,8 +200,17 @@ class ACAgarwalWebSocketClient:
                 "authorization": self.token,
                 "Content-Type": "application/json",
             }
-            res = requests.post(url, json=payload, headers=headers, timeout=10)
-            return res.status_code == 200
+
+            for u in candidate_urls:
+                try:
+                    res = requests.post(u, json=payload, headers=headers, timeout=5)
+                    if res.status_code == 200:
+                        logger.info(f"[AC Agarwal WS] Subscribed successfully at: {u}")
+                        return True
+                except Exception as e:
+                    logger.debug(f"[AC Agarwal WS] Subscription attempt at {u} failed: {e}")
+
+            return False
         except Exception as e:
             logger.error(f"[AC Agarwal WS] Subscription exception: {e}")
             return False

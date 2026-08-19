@@ -118,14 +118,25 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
     def _handle_tick(self, raw_tick: dict):
         try:
             parsed = self.transform_to_openalgo_format(raw_tick)
-            if parsed:
-                self.publish_tick(parsed)
+            if parsed and parsed.get("symbol"):
+                exchange = parsed.get("exchange", "NSE")
+                symbol = parsed.get("symbol")
+
+                # Publish to all standard modes: LTP, QUOTE, DEPTH
+                topic_ltp = f"{self.broker_name}_{exchange}_{symbol}_LTP"
+                topic_quote = f"{self.broker_name}_{exchange}_{symbol}_QUOTE"
+
+                self.publish_market_data(topic_ltp, parsed)
+                self.publish_market_data(topic_quote, parsed)
         except Exception as e:
             self.logger.error(f"[AC Agarwal WS] Tick handler error: {e}")
 
     def _handle_order_update(self, raw_update: dict):
         try:
-            self.publish_order_update(raw_update)
+            if isinstance(raw_update, str):
+                raw_update = json.loads(raw_update)
+            # Route order update if needed
+            self.logger.info(f"[AC Agarwal WS] Received order update: {raw_update}")
         except Exception as e:
             self.logger.error(f"[AC Agarwal WS] Order update handler error: {e}")
 
@@ -134,22 +145,59 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             if isinstance(raw_data, str):
                 raw_data = json.loads(raw_data)
 
-            token = str(raw_data.get("ExchangeInstrumentID", ""))
-            exch_code = raw_data.get("ExchangeSegment", 1)
+            # In Symphony XTS, touchline details can be nested in Touchline or flat
+            touchline = raw_data.get("Touchline") or raw_data.get("touchline") or raw_data
+            if isinstance(touchline, str):
+                try:
+                    touchline = json.loads(touchline)
+                except Exception:
+                    touchline = {}
+
+            token = str(
+                raw_data.get("ExchangeInstrumentID")
+                or raw_data.get("exchangeInstrumentID")
+                or raw_data.get("Token")
+                or raw_data.get("token")
+                or ""
+            )
+            exch_code = raw_data.get("ExchangeSegment") or raw_data.get("exchangeSegment") or 1
             exchange = ACAgarwalExchangeMapper.get_openalgo_exchange(exch_code)
             symbol = get_symbol(token, exchange) or token
+
+            ltp = float(
+                touchline.get("LastTradedPrice")
+                or touchline.get("lastTradedPrice")
+                or touchline.get("LTP")
+                or touchline.get("ltp")
+                or raw_data.get("LastTradedPrice")
+                or raw_data.get("LTP")
+                or 0.0
+            )
+            open_p = float(touchline.get("Open") or touchline.get("open") or raw_data.get("Open") or 0.0)
+            high_p = float(touchline.get("High") or touchline.get("high") or raw_data.get("High") or 0.0)
+            low_p = float(touchline.get("Low") or touchline.get("low") or raw_data.get("Low") or 0.0)
+            close_p = float(touchline.get("Close") or touchline.get("close") or raw_data.get("Close") or 0.0)
+            vol = int(
+                touchline.get("TotalQtyTraded")
+                or touchline.get("totalQtyTraded")
+                or touchline.get("Volume")
+                or touchline.get("volume")
+                or raw_data.get("TotalQtyTraded")
+                or 0
+            )
 
             return {
                 "type": "quote",
                 "symbol": symbol,
                 "token": token,
                 "exchange": exchange,
-                "ltp": float(raw_data.get("LastTradedPrice", 0.0)),
-                "open": float(raw_data.get("Open", 0.0)),
-                "high": float(raw_data.get("High", 0.0)),
-                "low": float(raw_data.get("Low", 0.0)),
-                "close": float(raw_data.get("Close", 0.0)),
-                "volume": int(raw_data.get("Volume", 0)),
+                "ltp": ltp,
+                "open": open_p,
+                "high": high_p,
+                "low": low_p,
+                "close": close_p,
+                "volume": vol,
+                "raw": raw_data,
             }
         except Exception as e:
             self.logger.error(f"[AC Agarwal WS] Error transforming data: {e}")

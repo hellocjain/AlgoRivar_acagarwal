@@ -30,6 +30,15 @@ class BrokerData:
         }
 
     def _get_headers(self):
+        if not self.feed_token:
+            try:
+                from broker.acagarwal.api.auth_api import get_feed_token
+                feed_tok, _, _ = get_feed_token()
+                if feed_tok:
+                    self.feed_token = feed_tok
+            except Exception as e:
+                logger.debug(f"[AC Agarwal] On-demand feed token fetch failed: {e}")
+
         token = self.feed_token or self.auth_token or ""
         return {
             "authorization": token,

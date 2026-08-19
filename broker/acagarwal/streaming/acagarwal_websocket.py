@@ -76,7 +76,10 @@ class ACAgarwalWebSocketClient:
                     data = response.json()
                     if data.get("type") == "success":
                         self.token = data["result"].get("token")
-                        logger.info(f"[AC Agarwal WS] Market Data login successful via {path}")
+                        actual_uid = data["result"].get("userID")
+                        if actual_uid:
+                            self.user_id = actual_uid
+                        logger.info(f"[AC Agarwal WS] Market Data login successful via {path} (userID: {self.user_id})")
                         return True
             except Exception as e:
                 logger.debug(f"[AC Agarwal WS] Login attempt failed at {path}: {e}")
@@ -112,7 +115,10 @@ class ACAgarwalWebSocketClient:
 
                     self._register_events()
 
-                    ws_url = f"{self.base_url}?token={self.token}&userID={self.user_id}&source=WEBAPI"
+                    ws_url = (
+                        f"{self.base_url}/?token={self.token}&userID={self.user_id}"
+                        f"&publishFormat=JSON&broadcastMode=FULL"
+                    )
                     logger.info(f"[AC Agarwal WS] Connecting Socket.IO client at {spath}...")
                     self.sio.connect(ws_url, socketio_path=spath, transports=["websocket"])
 
@@ -298,15 +304,16 @@ class ACAgarwalWebSocketClient:
 
             codes = [1502]
             if mode == 3:
-                codes = [1502, 1505, 1501]
+                codes = [1502, 1505, 1501, 1512]
             elif mode == 1:
-                codes = [1502, 1501]
+                codes = [1512, 1502, 1501]
 
             success = False
             for code in codes:
                 payload = {
                     "instruments": instruments,
                     "xtsMessageCode": code,
+                    "publishFormat": "JSON",
                 }
                 for u in candidate_urls:
                     try:

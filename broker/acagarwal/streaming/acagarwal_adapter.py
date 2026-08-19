@@ -251,14 +251,24 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
             close_p = raw_close if raw_close > 0 else last.get("close", ltp)
 
             vol = _to_int(
-                touchline.get("TotalQtyTraded")
+                touchline.get("TotalTradedQuantity")
+                or touchline.get("TotalQtyTraded")
                 or touchline.get("totalQtyTraded")
                 or touchline.get("Volume")
                 or touchline.get("volume")
+                or raw_data.get("TotalTradedQuantity")
                 or raw_data.get("TotalQtyTraded")
             )
             if vol == 0:
                 vol = last.get("volume", 0)
+
+            ltq = _to_int(
+                touchline.get("LastTradedQuantity")
+                or touchline.get("LastTradedQunatity")
+                or raw_data.get("LastTradedQuantity")
+                or raw_data.get("LastTradedQunatity")
+                or 0
+            )
 
             if ltp > 0:
                 self._last_prices[token] = {
@@ -268,6 +278,7 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                     "low": low_p,
                     "close": close_p,
                     "volume": vol,
+                    "ltq": ltq,
                 }
 
             # Extract depth book if present in Symphony XTS payload
@@ -303,6 +314,8 @@ class ACAgarwalWebSocketAdapter(BaseBrokerWebSocketAdapter):
                 "low": low_p,
                 "close": close_p,
                 "volume": vol,
+                "ltq": ltq,
+                "last_quantity": ltq,
                 "timestamp": int(_time.time()),
                 "raw": raw_data,
             }
